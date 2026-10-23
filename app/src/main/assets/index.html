@@ -64,105 +64,124 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
 <script>
 "use strict";
 
-const entries = [
-  {en:"hello",id:"halo",pos:"interjection"},
-  {en:"goodbye",id:"selamat tinggal",pos:"interjection"},
-  {en:"please",id:"silakan",pos:"polite expression"},
-  {en:"thank you",id:"terima kasih",pos:"expression"},
-  {en:"sorry",id:"maaf",pos:"expression"},
-  {en:"yes",id:"ya",pos:"adverb"},
-  {en:"no",id:"tidak",pos:"adverb"},
-  {en:"water",id:"air",pos:"noun"},
-  {en:"food",id:"makanan",pos:"noun"},
-  {en:"rice",id:"nasi",pos:"noun"},
-  {en:"house",id:"rumah",pos:"noun"},
-  {en:"book",id:"buku",pos:"noun"},
-  {en:"school",id:"sekolah",pos:"noun"},
-  {en:"friend",id:"teman",pos:"noun"},
-  {en:"family",id:"keluarga",pos:"noun"},
-  {en:"love",id:"cinta",pos:"noun / verb"},
-  {en:"good",id:"baik",pos:"adjective"},
-  {en:"bad",id:"buruk",pos:"adjective"},
-  {en:"big",id:"besar",pos:"adjective"},
-  {en:"small",id:"kecil",pos:"adjective"},
-  {en:"eat",id:"makan",pos:"verb"},
-  {en:"drink",id:"minum",pos:"verb"},
-  {en:"go",id:"pergi",pos:"verb"},
-  {en:"come",id:"datang",pos:"verb"},
-  {en:"read",id:"membaca",pos:"verb"},
-  {en:"write",id:"menulis",pos:"verb"},
-  {en:"learn",id:"belajar",pos:"verb"},
-  {en:"work",id:"bekerja",pos:"verb"},
-  {en:"sleep",id:"tidur",pos:"verb"},
-  {en:"thank",id:"berterima kasih",pos:"verb"}
-];
-
 const direction = document.getElementById("direction");
 const query = document.getElementById("query");
 const results = document.getElementById("results");
+const searchButton = document.getElementById("searchButton");
+const swapButton = document.getElementById("swapButton");
+
+function showMessage(message) {
+  results.replaceChildren();
+  const p = document.createElement("p");
+  p.className = "muted";
+  p.textContent = message;
+  results.appendChild(p);
+}
+
+function safeDefinition(html) {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const allowed = new Set([
+    "DIV", "SPAN", "I", "B", "BR", "P", "EM", "STRONG",
+    "SUP", "SUB", "CODE", "UL", "OL", "LI", "SMALL"
+  ]);
+
+  function copySafe(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(node.nodeValue || "");
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return document.createDocumentFragment();
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const child of node.childNodes) {
+      fragment.appendChild(copySafe(child));
+    }
+    if (!allowed.has(node.tagName)) return fragment;
+
+    const clean = document.createElement(node.tagName.toLowerCase());
+    clean.appendChild(fragment);
+    return clean;
+  }
+
+  const output = document.createDocumentFragment();
+  for (const child of parsed.body.childNodes) {
+    output.appendChild(copySafe(child));
+  }
+  return output;
+}
 
 function renderSearch() {
-  const term = query.value.trim().toLocaleLowerCase();
+  const term = query.value.trim();
   if (!term) {
-    results.textContent = "";
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = "Enter a word or phrase to search.";
-    results.appendChild(p);
+    showMessage("Enter a word or phrase to search.");
     return;
   }
 
-  const enToId = direction.value === "en-id";
-  const sourceKey = enToId ? "en" : "id";
-  const targetKey = enToId ? "id" : "en";
-  const matches = entries.filter(entry =>
-    entry[sourceKey].toLocaleLowerCase().includes(term)
-  ).slice(0, 50);
-
-  results.textContent = "";
-  if (!matches.length) {
-    const p = document.createElement("p");
-    p.textContent = "No matching starter entry found. This vocabulary is still small; more dictionary data will be added.";
-    results.appendChild(p);
+  if (typeof window.DictionaryDB === "undefined") {
+    showMessage("The offline dictionary is not ready. Please reopen the app.");
     return;
   }
 
-  const summary = document.createElement("p");
-  summary.className = "muted";
-  summary.textContent = matches.length + (matches.length === 1 ? " result" : " results");
-  results.appendChild(summary);
+  try {
+    const matches = JSON.parse(
+      window.DictionaryDB.search(direction.value, term)
+    );
+    results.replaceChildren();
 
-  for (const entry of matches) {
-    const card = document.createElement("article");
-    card.className = "entry";
+    if (!matches.length) {
+      showMessage("No matching entries found. Try another spelling or switch direction.");
+      return;
+    }
 
-    const word = document.createElement("div");
-    word.className = "word";
-    word.textContent = entry[sourceKey];
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    summary.textContent =
+      matches.length + (matches.length === 50 ? " results (maximum shown)" :
+      matches.length === 1 ? " result" : " results");
+    results.appendChild(summary);
 
-    const translation = document.createElement("div");
-    translation.className = "translation";
-    translation.textContent = entry[targetKey];
+    for (const entry of matches) {
+      const card = document.createElement("article");
+      card.className = "entry";
 
-    const pos = document.createElement("div");
-    pos.className = "pos";
-    pos.textContent = entry.pos;
+      const word = document.createElement("div");
+      word.className = "word";
+      word.textContent = entry.term;
+      card.appendChild(word);
 
-    card.append(word, translation, pos);
-    results.appendChild(card);
+      if (entry.term !== entry.word || entry.alias) {
+        const related = document.createElement("div");
+        related.className = "pos";
+        related.textContent = "Dictionary entry: " + entry.word;
+        card.appendChild(related);
+      }
+
+      const definition = document.createElement("div");
+      definition.className = "translation";
+      definition.appendChild(safeDefinition(entry.definition || ""));
+      card.appendChild(definition);
+      results.appendChild(card);
+    }
+  } catch (error) {
+    showMessage("Search failed. Please close and reopen the app.");
   }
 }
 
-document.getElementById("searchButton").addEventListener("click", renderSearch);
+searchButton.addEventListener("click", renderSearch);
 query.addEventListener("keydown", event => {
   if (event.key === "Enter") renderSearch();
 });
 query.addEventListener("input", renderSearch);
+direction.addEventListener("change", renderSearch);
 
-document.getElementById("swapButton").addEventListener("click", () => {
+swapButton.addEventListener("click", () => {
   direction.value = direction.value === "en-id" ? "id-en" : "en-id";
   renderSearch();
 });
+
+document.getElementById("footer").textContent =
+  "Offline dictionary · Search stays on this device · 598,035 searchable terms";
 </script>
 </body>
 </html>
