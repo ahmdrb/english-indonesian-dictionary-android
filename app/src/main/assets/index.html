@@ -39,6 +39,20 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
 .alphabet-pagination button { margin-top: 0; }
 .alphabet-pagination button:disabled { opacity: .45; cursor: default; }
 .browse-word { display: block; width: 100%; margin-top: 8px; text-align: left; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; }
+.nav-actions, .entry-actions, .saved-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.nav-actions button, .entry-actions button, .saved-actions button { flex: 1 1 auto; padding: 10px 12px; }
+.secondary-action { background: #e9efff; color: #2049ad; }
+.remove-action { background: #fff0f0; color: #a32323; }
+.saved-card { border-top: 1px solid #e0e6ef; padding: 14px 0; }
+.saved-card:first-child { border-top: 0; }
+.saved-title { font-weight: 750; overflow-wrap: anywhere; }
+.collection-card { border: 1px solid #e0e6ef; border-radius: 13px; padding: 14px; margin-top: 12px; }
+.collection-heading { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.collection-heading h3 { margin: 0; overflow-wrap: anywhere; }
+.collection-heading button { padding: 8px 10px; }
+#createCollectionButton { width: 100%; margin-top: 10px; }
+#savedSections { scroll-margin-top: 16px; }
+
 </style>
 </head>
 <body>
@@ -46,6 +60,11 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
   <span class="status">Offline · Local vocabulary</span>
   <h1>English ↔ Indonesian Dictionary</h1>
   <p class="subtitle">Look up words in either language. Search works on your device without an internet connection.</p>
+
+  <div class="nav-actions" aria-label="Vocabulary sections">
+    <button type="button" class="secondary-action" id="openFavorites">★ Favorites</button>
+    <button type="button" class="secondary-action" id="openCollections">▤ Collections</button>
+  </div>
 
   <section class="panel">
     <h2>Find a word</h2>
@@ -76,6 +95,25 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
     </div>
   </section>
 
+  <div id="savedSections">
+    <section class="panel" id="favoritesPanel">
+      <h2>★ Favorites</h2>
+      <p class="muted">Your saved words, available offline.</p>
+      <div id="favoritesList"></div>
+    </section>
+
+    <section class="panel" id="collectionsPanel">
+      <h2>▤ Collections</h2>
+      <p class="muted">Create named vocabulary groups and add words from search or A–Z browsing.</p>
+      <label for="collectionTitle">New collection title</label>
+      <input id="collectionTitle" type="text" maxlength="80"
+             placeholder="e.g. Academic English" autocomplete="off">
+      <button id="createCollectionButton" type="button">Create collection</button>
+      <p id="collectionStatus" class="muted" aria-live="polite"></p>
+      <div id="collectionsList"></div>
+    </section>
+  </div>
+
   <footer id="footer">Offline dictionary · Stored in this app · No internet required</footer>
 </main>
 
@@ -95,6 +133,293 @@ const nextPageButton = document.getElementById("nextPage");
 let activeLetter = null;
 let activeOffset = 0;
 const browsePageSize = 100;
+const FAVORITES_KEY = "dictionary-favorites-v1";
+const COLLECTIONS_KEY = "dictionary-collections-v1";
+
+function loadSaved(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "null");
+    return Array.isArray(value) ? value : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+let favorites = loadSaved(FAVORITES_KEY, []);
+let collections = loadSaved(COLLECTIONS_KEY, []);
+
+function saveFavorites() {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  } catch (_) {
+    alert("Could not save favorites. Check available app storage.");
+  }
+}
+
+function saveCollections() {
+  try {
+    localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+  } catch (_) {
+    alert("Could not save collections. Check available app storage.");
+  }
+}
+
+function entryKey(entry) {
+  return String(entry.direction || direction.value) + "|" +
+    String(entry.term || "").trim().toLocaleLowerCase();
+}
+
+function currentEntry(entry) {
+  return {
+    term: String(entry.term || "").trim(),
+    word: String(entry.word || entry.term || "").trim(),
+    definition: String(entry.definition || ""),
+    direction: direction.value
+  };
+}
+
+function makeAction(label, className, callback) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  if (className) button.className = className;
+  button.addEventListener("click", callback);
+  return button;
+}
+
+function addFavorite(entry) {
+  const item = currentEntry(entry);
+  if (!item.term) return;
+  if (favorites.some(saved => entryKey(saved) === entryKey(item))) {
+    alert("\u201c" + item.term + "\u201d is already in Favorites.");
+    return;
+  }
+  favorites.push(item);
+  saveFavorites();
+  renderFavorites();
+}
+
+function addToCollection(entry) {
+  const item = currentEntry(entry);
+  if (!item.term) return;
+
+  if (!collections.length) {
+    alert("Create a collection first in the Collections section.");
+    document.getElementById("collectionsPanel").scrollIntoView({
+      behavior: "smooth", block: "start"
+    });
+    document.getElementById("collectionTitle").focus();
+    return;
+  }
+
+  const names = collections.map(c => c.name).join("\n");
+  const choice = prompt(
+    "Type the collection title to add this word to it:\n\n" + names
+  );
+  if (choice === null) return;
+
+  const collection = collections.find(
+    c => c.name.toLocaleLowerCase() === choice.trim().toLocaleLowerCase()
+  );
+  if (!collection) {
+    alert("Collection not found. Type its title exactly as shown.");
+    return;
+  }
+
+  if (!Array.isArray(collection.words)) collection.words = [];
+  if (collection.words.some(saved => entryKey(saved) === entryKey(item))) {
+    alert("\u201c" + item.term + "\u201d is already in this collection.");
+    return;
+  }
+
+  collection.words.push(item);
+  saveCollections();
+  renderCollections();
+}
+
+function openSavedWord(entry) {
+  query.value = entry.term;
+  if (entry.direction === "en-id" || entry.direction === "id-en") {
+    direction.value = entry.direction;
+  }
+  renderSearch();
+  document.getElementById("query").scrollIntoView({
+    behavior: "smooth", block: "center"
+  });
+}
+
+function renderSavedWord(entry, onRemove, removeLabel) {
+  const card = document.createElement("article");
+  card.className = "saved-card";
+
+  const title = makeAction(entry.term, "browse-word", () => openSavedWord(entry));
+  title.style.marginTop = "0";
+  card.appendChild(title);
+
+  if (entry.word && entry.word !== entry.term) {
+    const related = document.createElement("p");
+    related.className = "muted";
+    related.textContent = "Dictionary entry: " + entry.word;
+    card.appendChild(related);
+  }
+
+  const definition = document.createElement("div");
+  definition.className = "translation";
+  definition.appendChild(
+    safeDefinition(cleanDefinitionHtml(entry.definition || ""))
+  );
+  card.appendChild(definition);
+
+  const actions = document.createElement("div");
+  actions.className = "saved-actions";
+  actions.appendChild(makeAction(
+    "Add to collection", "secondary-action", () => addToCollection(entry)
+  ));
+  actions.appendChild(makeAction(
+    removeLabel, "remove-action", onRemove
+  ));
+  card.appendChild(actions);
+  return card;
+}
+
+function renderFavorites() {
+  const list = document.getElementById("favoritesList");
+  list.replaceChildren();
+
+  if (!favorites.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No favorites yet. Add words from search results or A–Z browsing.";
+    list.appendChild(empty);
+    return;
+  }
+
+  const count = document.createElement("p");
+  count.className = "muted";
+  count.textContent = favorites.length + " saved word" +
+    (favorites.length === 1 ? "" : "s");
+  list.appendChild(count);
+
+  favorites.forEach((entry, index) => {
+    list.appendChild(renderSavedWord(entry, () => {
+      favorites.splice(index, 1);
+      saveFavorites();
+      renderFavorites();
+    }, "Remove favorite"));
+  });
+}
+
+function renderCollections() {
+  const list = document.getElementById("collectionsList");
+  list.replaceChildren();
+
+  if (!collections.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No collections yet. Create your first collection above.";
+    list.appendChild(empty);
+    return;
+  }
+
+  collections.forEach(collection => {
+    if (!Array.isArray(collection.words)) collection.words = [];
+
+    const card = document.createElement("section");
+    card.className = "collection-card";
+
+    const heading = document.createElement("div");
+    heading.className = "collection-heading";
+    const title = document.createElement("h3");
+    title.textContent = collection.name;
+    heading.appendChild(title);
+    heading.appendChild(makeAction("Rename", "secondary-action", () => {
+      const next = prompt("Rename collection:", collection.name);
+      if (next === null) return;
+      const name = next.trim();
+      if (!name) {
+        alert("Collection title cannot be empty.");
+        return;
+      }
+      if (collections.some(c => c !== collection &&
+          c.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        alert("A collection with that title already exists.");
+        return;
+      }
+      collection.name = name.slice(0, 80);
+      saveCollections();
+      renderCollections();
+    }));
+    heading.appendChild(makeAction("Delete", "remove-action", () => {
+      if (!confirm("Delete collection \"" + collection.name +
+          "\" and all words inside it?")) return;
+      collections = collections.filter(c => c !== collection);
+      saveCollections();
+      renderCollections();
+    }));
+    card.appendChild(heading);
+
+    const count = document.createElement("p");
+    count.className = "muted";
+    count.textContent = collection.words.length + " word" +
+      (collection.words.length === 1 ? "" : "s");
+    card.appendChild(count);
+
+    if (!collection.words.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No words yet. Add words from search or A–Z browsing.";
+      card.appendChild(empty);
+    } else {
+      collection.words.forEach((entry, index) => {
+        card.appendChild(renderSavedWord(entry, () => {
+          collection.words.splice(index, 1);
+          saveCollections();
+          renderCollections();
+        }, "Remove from collection"));
+      });
+    }
+
+    list.appendChild(card);
+  });
+}
+
+document.getElementById("createCollectionButton").addEventListener("click", () => {
+  const input = document.getElementById("collectionTitle");
+  const name = input.value.trim();
+  const status = document.getElementById("collectionStatus");
+
+  if (!name) {
+    status.textContent = "Enter a collection title first.";
+    input.focus();
+    return;
+  }
+  if (collections.some(c =>
+      c.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+    status.textContent = "A collection with that title already exists.";
+    return;
+  }
+
+  collections.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    name: name.slice(0, 80),
+    words: []
+  });
+  saveCollections();
+  input.value = "";
+  status.textContent = "Collection created.";
+  renderCollections();
+});
+
+document.getElementById("openFavorites").addEventListener("click", () => {
+  document.getElementById("favoritesPanel").scrollIntoView({
+    behavior: "smooth", block: "start"
+  });
+});
+document.getElementById("openCollections").addEventListener("click", () => {
+  document.getElementById("collectionsPanel").scrollIntoView({
+    behavior: "smooth", block: "start"
+  });
+});
 
 function showMessage(message) {
   results.replaceChildren();
@@ -196,6 +521,14 @@ function renderSearch() {
       definition.className = "translation";
       definition.appendChild(safeDefinition(cleanDefinitionHtml(entry.definition || "")));
       card.appendChild(definition);
+
+      const actions = document.createElement("div");
+      actions.className = "entry-actions";
+      actions.appendChild(makeAction("★ Add to Favorites", "secondary-action",
+        () => addFavorite(entry)));
+      actions.appendChild(makeAction("＋ Add to Collection", "secondary-action",
+        () => addToCollection(entry)));
+      card.appendChild(actions);
       results.appendChild(card);
     }
   } catch (error) {
@@ -260,18 +593,32 @@ function renderBrowsePage() {
     }
 
     for (const entry of entries) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "browse-word";
-      button.textContent = entry.term;
-      button.addEventListener("click", () => {
+      const row = document.createElement("article");
+      row.className = "entry";
+
+      const button = makeAction(entry.term, "browse-word", () => {
         query.value = entry.term;
         renderSearch();
         document.getElementById("query").scrollIntoView({
           behavior: "smooth", block: "center"
         });
       });
-      results.appendChild(button);
+      row.appendChild(button);
+
+      const actions = document.createElement("div");
+      actions.className = "entry-actions";
+      actions.appendChild(makeAction("★ Favorite", "secondary-action",
+        () => addFavorite({
+          term: entry.term, word: entry.term, definition: "",
+          direction: direction.value
+        })));
+      actions.appendChild(makeAction("＋ Collection", "secondary-action",
+        () => addToCollection({
+          term: entry.term, word: entry.term, definition: "",
+          direction: direction.value
+        })));
+      row.appendChild(actions);
+      results.appendChild(row);
     }
 
     alphabetStatus.textContent = direction.value === "en-id"
@@ -320,6 +667,8 @@ document.getElementById("footer").textContent =
   "Offline dictionary · A–Z browsing · 598,035 searchable terms";
 
 renderAlphabetButtons();
+renderFavorites();
+renderCollections();
 </script>
 </body>
 </html>
