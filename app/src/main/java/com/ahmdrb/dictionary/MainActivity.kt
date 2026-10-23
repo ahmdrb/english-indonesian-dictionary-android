@@ -63,7 +63,6 @@ class MainActivity : Activity() {
                     SQLiteDatabase.OPEN_READONLY
                 )
 
-                opened.execSQL("PRAGMA case_sensitive_like=ON")
                 val check = opened.rawQuery("PRAGMA quick_check", null)
                 val valid = check.use {
                     it.moveToFirst() && it.getString(0) == "ok"
