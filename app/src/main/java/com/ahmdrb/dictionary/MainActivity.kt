@@ -10,7 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.GZIPInputStream
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -44,18 +43,11 @@ class MainActivity : Activity() {
                 if (!dbFile.exists() || dbFile.length() == 0L) {
                     val tempFile = File(filesDir, "dictionary.db.tmp")
                     tempFile.delete()
-                    try {
-                        assets.open("dictionary.db.gz").use { input ->
-                            GZIPInputStream(input).use { gzip ->
-                                FileOutputStream(tempFile).use { output ->
-                                    gzip.copyTo(output)
-                                    output.fd.sync()
-                                }
-                            }
+                    assets.open("dictionary.db").use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                            output.fd.sync()
                         }
-                    } catch (e: Exception) {
-                        tempFile.delete()
-                        throw e
                     }
                     if (!tempFile.renameTo(dbFile)) {
                         tempFile.copyTo(dbFile, overwrite = true)
