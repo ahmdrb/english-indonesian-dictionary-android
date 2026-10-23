@@ -241,12 +241,18 @@ class MainActivity : Activity() {
             synchronized(db) {
                 val cursor = db.rawQuery(
                     """
-                    SELECT t.term, e.word, e.definition, t.is_alias
+                    SELECT
+                        MIN(t.term) AS term,
+                        MIN(e.word) AS word,
+                        MIN(e.definition) AS definition,
+                        MIN(t.is_alias) AS is_alias
                     FROM terms t
                     JOIN entries e ON e.id = t.entry_id
                     WHERE t.direction = ?
                       AND t.normalized LIKE ?
-                    ORDER BY t.normalized, t.id
+                      AND LENGTH(TRIM(t.term)) > 0
+                    GROUP BY LOWER(TRIM(t.term))
+                    ORDER BY MIN(t.is_alias), MIN(t.normalized), LOWER(TRIM(t.term))
                     LIMIT ? OFFSET ?
                     """.trimIndent(),
                     arrayOf(
