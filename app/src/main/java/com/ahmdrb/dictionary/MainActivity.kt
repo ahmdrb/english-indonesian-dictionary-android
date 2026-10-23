@@ -13,6 +13,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
+    private val packagedDictionaryVersion = 2
     private lateinit var webView: WebView
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var database: SQLiteDatabase? = null
@@ -40,9 +41,14 @@ class MainActivity : Activity() {
             try {
                 val dbFile = File(filesDir, "dictionary.db")
 
+                val savedDbVersion = getSharedPreferences(
+                    "dictionary_database", MODE_PRIVATE
+                ).getInt("version", 0)
+
                 val needsRefresh = !dbFile.exists() ||
                     dbFile.length() == 0L ||
-                    !hasCategoriesTable(dbFile)
+                    !hasCategoriesTable(dbFile) ||
+                    savedDbVersion < packagedDictionaryVersion
 
                 if (needsRefresh) {
                     val tempFile = File(filesDir, "dictionary.db.tmp")
@@ -108,6 +114,10 @@ class MainActivity : Activity() {
                         "Dictionary database integrity or category check failed"
                     )
                 }
+
+                getSharedPreferences(
+                    "dictionary_database", MODE_PRIVATE
+                ).edit().putInt("version", packagedDictionaryVersion).apply()
 
                 database = opened
 

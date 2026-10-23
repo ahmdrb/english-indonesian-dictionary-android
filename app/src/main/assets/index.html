@@ -212,29 +212,93 @@ function addToCollection(entry) {
     return;
   }
 
-  const names = collections.map(c => c.name).join("\n");
-  const choice = prompt(
-    "Type the collection title to add this word to it:\n\n" + names
-  );
-  if (choice === null) return;
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:9999;background:#0008;" +
+    "display:flex;align-items:center;justify-content:center;padding:20px;";
 
-  const collection = collections.find(
-    c => c.name.toLocaleLowerCase() === choice.trim().toLocaleLowerCase()
-  );
-  if (!collection) {
-    alert("Collection not found. Type its title exactly as shown.");
-    return;
+  const dialog = document.createElement("section");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "Add word to collection");
+  dialog.style.cssText =
+    "background:white;color:#182235;width:100%;max-width:420px;" +
+    "padding:22px;border-radius:18px;box-shadow:0 8px 40px #0003;";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Add to Collection";
+  dialog.appendChild(heading);
+
+  const description = document.createElement("p");
+  description.textContent = "Choose a collection for “" + item.term + "”.";
+  dialog.appendChild(description);
+
+  const select = document.createElement("select");
+  select.style.cssText =
+    "width:100%;padding:13px;border:1px solid #cbd4e2;" +
+    "border-radius:11px;font:inherit;background:white;color:#182235;";
+
+  for (const collection of collections) {
+    const option = document.createElement("option");
+    option.value = collection.id;
+    option.textContent = collection.name;
+    select.appendChild(option);
   }
+  dialog.appendChild(select);
 
-  if (!Array.isArray(collection.words)) collection.words = [];
-  if (collection.words.some(saved => entryKey(saved) === entryKey(item))) {
-    alert("\u201c" + item.term + "\u201d is already in this collection.");
-    return;
-  }
+  const actions = document.createElement("div");
+  actions.style.cssText =
+    "display:flex;gap:10px;margin-top:18px;";
 
-  collection.words.push(item);
-  saveCollections();
-  renderCollections();
+  const cancel = makeAction("Cancel", "secondary-action", () => {
+    overlay.remove();
+  });
+  const add = makeAction("Add word", "", () => {
+    const collection = collections.find(c => c.id === select.value);
+    if (!collection) {
+      alert("Please select a valid collection.");
+      return;
+    }
+
+    if (!Array.isArray(collection.words)) collection.words = [];
+
+    if (collection.words.some(saved =>
+        entryKey(saved) === entryKey(item))) {
+      alert("“" + item.term + "” is already in this collection.");
+      return;
+    }
+
+    collection.words.push(item);
+    saveCollections();
+    renderCollections();
+    overlay.remove();
+
+    const status = document.getElementById("collectionStatus");
+    status.textContent = "Added “" + item.term +
+      "” to " + collection.name + ".";
+  });
+
+  cancel.style.flex = "1";
+  add.style.flex = "1";
+  actions.append(cancel, add);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+
+  overlay.addEventListener("click", event => {
+    if (event.target === overlay) overlay.remove();
+  });
+
+  document.addEventListener("keydown", function closeOnEscape(event) {
+    if (event.key === "Escape" && overlay.isConnected) {
+      overlay.remove();
+    }
+    if (!overlay.isConnected) {
+      document.removeEventListener("keydown", closeOnEscape);
+    }
+  });
+
+  document.body.appendChild(overlay);
+  select.focus();
 }
 
 function openSavedWord(entry) {
