@@ -13,7 +13,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
-    private val packagedDictionaryVersion = 2
+    private val packagedDictionaryVersion = 3
     private lateinit var webView: WebView
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var database: SQLiteDatabase? = null

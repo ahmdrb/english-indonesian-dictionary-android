@@ -34,6 +34,12 @@ jobs:
       - name: Install Android SDK components
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Prepare dictionary database asset
+        run: |
+          gzip -t app/src/main/assets/dictionary.db.gz
+          gzip -dc app/src/main/assets/dictionary.db.gz > app/src/main/assets/dictionary.db
+          python -c "from pathlib import Path; p=Path('app/src/main/assets/dictionary.db'); assert p.read_bytes()[:16] == b'SQLite format 3\\x00'; print('Dictionary database asset validated')"
+
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
