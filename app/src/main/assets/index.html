@@ -252,33 +252,69 @@ function renderSavedWord(entry, onRemove, removeLabel) {
   const card = document.createElement("article");
   card.className = "saved-card";
 
-  const title = makeAction(entry.term, "browse-word", () => openSavedWord(entry));
+  // Display only the saved word or phrase.
+  // Tap to open its dictionary entry; hold to remove it.
+  const title = makeAction(entry.term, "browse-word", () => {
+    if (title.longPressHandled) {
+      title.longPressHandled = false;
+      return;
+    }
+    openSavedWord(entry);
+  });
+
   title.style.marginTop = "0";
+  title.style.touchAction = "pan-y";
+
+  let pressTimer = null;
+  let longPressTriggered = false;
+
+  const cancelPress = () => {
+    if (pressTimer !== null) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+  };
+
+  title.addEventListener("pointerdown", () => {
+    longPressTriggered = false;
+    cancelPress();
+
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      longPressTriggered = true;
+      title.longPressHandled = true;
+
+      if (confirm("Remove “" + entry.term + "”" +
+          (removeLabel === "Remove favorite"
+            ? " from Favorites?"
+            : " from this collection?"))) {
+        onRemove();
+      }
+    }, 600);
+  });
+
+  title.addEventListener("pointerup", cancelPress);
+  title.addEventListener("pointerleave", cancelPress);
+  title.addEventListener("pointercancel", cancelPress);
+
+  title.addEventListener("contextmenu", event => {
+    event.preventDefault();
+    cancelPress();
+
+    if (!longPressTriggered) {
+      longPressTriggered = true;
+      title.longPressHandled = true;
+
+      if (confirm("Remove “" + entry.term + "”" +
+          (removeLabel === "Remove favorite"
+            ? " from Favorites?"
+            : " from this collection?"))) {
+        onRemove();
+      }
+    }
+  });
+
   card.appendChild(title);
-
-  if (entry.word && entry.word !== entry.term) {
-    const related = document.createElement("p");
-    related.className = "muted";
-    related.textContent = "Dictionary entry: " + entry.word;
-    card.appendChild(related);
-  }
-
-  const definition = document.createElement("div");
-  definition.className = "translation";
-  definition.appendChild(
-    safeDefinition(cleanDefinitionHtml(entry.definition || ""))
-  );
-  card.appendChild(definition);
-
-  const actions = document.createElement("div");
-  actions.className = "saved-actions";
-  actions.appendChild(makeAction(
-    "Add to collection", "secondary-action", () => addToCollection(entry)
-  ));
-  actions.appendChild(makeAction(
-    removeLabel, "remove-action", onRemove
-  ));
-  card.appendChild(actions);
   return card;
 }
 
