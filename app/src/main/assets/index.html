@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f5f7fb">
+<title>English ↔ Indonesian Dictionary</title>
+<style>
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  background: #f5f7fb;
+  color: #182235;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main {
+  width: min(100% - 32px, 680px);
+  margin: 0 auto;
+  padding: 36px 0;
+}
+h1 { font-size: 1.8rem; line-height: 1.2; }
+.subtitle { color: #596579; line-height: 1.6; }
+.panel {
+  background: white;
+  border: 1px solid #e0e6ef;
+  border-radius: 18px;
+  padding: 20px;
+  margin-top: 24px;
+}
+.status {
+  display: inline-block;
+  border-radius: 999px;
+  background: #e5f6ec;
+  color: #17653b;
+  padding: 6px 10px;
+  font-size: .85rem;
+}
+.direction { font-weight: 650; margin: 18px 0 8px; }
+button {
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #2457d6;
+  color: white;
+  font: inherit;
+  font-weight: 650;
+}
+footer { margin-top: 24px; color: #687386; font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <span class="status">Offline-first</span>
+  <h1>English ↔ Indonesian Dictionary</h1>
+  <p class="subtitle">
+    A bilingual dictionary designed to work on your device,
+    even without an internet connection.
+  </p>
+  <section class="panel">
+    <h2>Dictionary foundation</h2>
+    <p id="message">
+      The application shell is ready. The dictionary database
+      will be added after the first APK build is verified.
+    </p>
+    <p class="direction">Planned lookup directions</p>
+    <p>English → Indonesian</p>
+    <p>Indonesian → English</p>
+    <button id="checkButton" type="button">Check offline interface</button>
+    <p id="checkResult" role="status" aria-live="polite"></p>
+  </section>
+  <footer>
+    Local interface · Dictionary data not yet installed
+  </footer>
+</main>
+<script>
+document.getElementById("checkButton").addEventListener("click", () => {
+  document.getElementById("checkResult").textContent =
+    "The local interface is running. Dictionary lookup is not yet implemented.";
+});
+</script>
+</body>
+</html>

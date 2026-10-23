@@ -1,0 +1,13 @@
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# Generated dictionary data and temporary source archives
+data/raw/
+data/tmp/
+*.sqlite-wal
+*.sqlite-shm
