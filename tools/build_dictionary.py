@@ -3,6 +3,7 @@ from zipfile import ZipFile
 import gzip
 import sqlite3
 import struct
+import re
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "dictionary-source"
@@ -171,6 +172,134 @@ for zip_name, folder, stem, direction in sources:
     print(f"Alternate forms processed: {aliases_seen:,}")
     print(f"Total searchable terms added: {terms_added + aliases_seen:,}")
 
+
+# Build a reproducible subject taxonomy from explicit dictionary labels.
+# Category assignment is deliberately conservative: it uses recognized
+# parenthesized subject labels, not arbitrary keyword guesses.
+OFFLINE_CATEGORY_TAXONOMY = [
+    ("science", None, "Science", None),
+    ("physics", "science", "Physics", ["physics"]),
+    ("biology", "science", "Biology", ["biology"]),
+    ("chemistry", "science", "Chemistry", ["chemistry"]),
+    ("astronomy", "science", "Astronomy", ["astronomy"]),
+    ("mathematics", "science", "Mathematics", ["mathematics", "math"]),
+    ("geology", "science", "Geology & Earth Science", ["geology"]),
+    ("ecology", "science", "Ecology", ["ecology"]),
+
+    ("technology", None, "Technology & Computing", None),
+    ("computer-science", "technology", "Computer Science", [
+        "computer science", "computing"
+    ]),
+    ("internet", "technology", "Internet & Networking", [
+        "internet", "networking"
+    ]),
+    ("electronics", "technology", "Electronics", ["electronics"]),
+
+    ("health", None, "Health & Medicine", None),
+    ("medicine", "health", "Medicine", ["medicine", "medical"]),
+    ("anatomy", "health", "Anatomy", ["anatomy"]),
+
+    ("society", None, "Society & Public Affairs", None),
+    ("law", "society", "Law", ["law", "legal"]),
+    ("economics", "society", "Economics", ["economics"]),
+    ("finance", "society", "Finance", ["finance"]),
+    ("politics", "society", "Politics", ["politics"]),
+    ("military", "society", "Military", ["military"]),
+
+    ("sports", None, "Sports", None),
+    ("baseball", "sports", "Baseball", ["baseball"]),
+    ("football", "sports", "Football", ["football"]),
+    ("basketball", "sports", "Basketball", ["basketball"]),
+
+    ("arts", None, "Arts & Design", None),
+    ("music", "arts", "Music", ["music"]),
+    ("architecture", "arts", "Architecture", ["architecture"]),
+
+    ("language", None, "Language & Linguistics", None),
+    ("linguistics", "language", "Linguistics", ["linguistics"]),
+
+    ("humanities", None, "Humanities & Ideas", None),
+    ("psychology", "humanities", "Psychology", ["psychology"]),
+    ("philosophy", "humanities", "Philosophy", ["philosophy"]),
+    ("geography", "humanities", "Geography", ["geography"]),
+]
+
+db.executescript("""
+CREATE TABLE categories (
+    id INTEGER PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    parent_id INTEGER,
+    name TEXT NOT NULL,
+    FOREIGN KEY(parent_id) REFERENCES categories(id)
+);
+CREATE INDEX categories_parent ON categories(parent_id, name);
+
+CREATE TABLE category_entries (
+    category_id INTEGER NOT NULL,
+    entry_id INTEGER NOT NULL,
+    PRIMARY KEY(category_id, entry_id),
+    FOREIGN KEY(category_id) REFERENCES categories(id),
+    FOREIGN KEY(entry_id) REFERENCES entries(id)
+);
+CREATE INDEX category_entries_entry ON category_entries(entry_id, category_id);
+""")
+
+category_ids = {}
+for slug, parent_slug, name, _labels in OFFLINE_CATEGORY_TAXONOMY:
+    parent_id = category_ids.get(parent_slug) if parent_slug else None
+    cursor = db.execute(
+        "INSERT INTO categories(slug, parent_id, name) VALUES (?, ?, ?)",
+        (slug, parent_id, name),
+    )
+    category_ids[slug] = cursor.lastrowid
+
+label_to_category = {}
+for slug, _parent, _name, labels in OFFLINE_CATEGORY_TAXONOMY:
+    if labels:
+        for label in labels:
+            label_to_category[label.casefold()] = slug
+
+# Link both the matching subject category and its parent category.
+category_links = set()
+subject_pattern = re.compile(r"\(([^()]*)\)")
+
+for entry_id, definition in db.execute(
+    "SELECT id, definition FROM entries"
+):
+    found_slugs = set()
+    for match in subject_pattern.finditer(definition):
+        label = match.group(1).strip().casefold()
+        slug = label_to_category.get(label)
+        if slug:
+            found_slugs.add(slug)
+
+    for slug in found_slugs:
+        category_links.add((category_ids[slug], entry_id))
+        parent_slug = next(
+            parent for child, parent, _name, _labels
+            in OFFLINE_CATEGORY_TAXONOMY if child == slug
+        )
+        if parent_slug:
+            category_links.add((category_ids[parent_slug], entry_id))
+
+db.executemany(
+    "INSERT OR IGNORE INTO category_entries(category_id, entry_id) VALUES (?, ?)",
+    sorted(category_links),
+)
+db.commit()
+
+print(f"\nCategories created: {len(category_ids):,}")
+print(f"Category-entry links created: {len(category_links):,}")
+for slug, _parent, name, _labels in OFFLINE_CATEGORY_TAXONOMY:
+    count = db.execute(
+        """SELECT COUNT(*) FROM category_entries ce
+           JOIN categories c ON c.id = ce.category_id
+           WHERE c.slug = ?""",
+        (slug,),
+    ).fetchone()[0]
+    print(f"  {name}: {count:,} entries")
+
+
 NOTICE_PATH.write_text("\n".join(notices), encoding="utf-8")
 db.execute("ANALYZE")
 db.commit()
@@ -187,6 +316,17 @@ for direction, in db.execute(
     print(f"\n{direction}: {entries_count:,} entries, {terms_count:,} searchable terms")
 
 db.close()
-print(f"\nDatabase created: {DB_PATH}")
-print(f"Database size: {DB_PATH.stat().st_size:,} bytes")
+
+# Package the generated database in the format consumed by Android.
+GZIP_PATH = ASSETS / "dictionary.db.gz"
+GZIP_TEMP = ASSETS / "dictionary.db.gz.tmp"
+with DB_PATH.open("rb") as raw, gzip.open(GZIP_TEMP, "wb", compresslevel=6) as packed:
+    import shutil
+    shutil.copyfileobj(raw, packed)
+
+GZIP_TEMP.replace(GZIP_PATH)
+DB_PATH.unlink()
+
+print(f"\nCompressed database created: {GZIP_PATH}")
+print(f"Compressed database size: {GZIP_PATH.stat().st_size:,} bytes")
 print(f"License notices created: {NOTICE_PATH}")

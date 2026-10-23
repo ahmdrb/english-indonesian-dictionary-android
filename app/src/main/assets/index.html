@@ -32,6 +32,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .translation { font-size: 1.05rem; margin-top: 5px; }
 .pos { color: #596579; font-size: .85rem; margin-top: 5px; }
 footer { margin-top: 22px; color: #687386; font-size: .85rem; }
+.category-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.category-button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 11px 12px; text-align: left; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; font-weight: 600; }
+.category-button.selected { background: #e4edff; color: #173e9b; border-color: #8eafff; }
+.category-button .count { flex: 0 0 auto; color: #596579; font-size: .82rem; font-weight: 500; }
+.category-group { margin-top: 9px; }
+.category-children { margin: 7px 0 4px 15px; padding-left: 10px; border-left: 2px solid #e0e6ef; display: grid; gap: 7px; }
+.category-children .category-button { font-size: .93rem; }
 </style>
 </head>
 <body>
@@ -58,7 +65,19 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
     </div>
   </section>
 
-  <footer id="footer">Starter vocabulary · Stored in this app · No internet required</footer>
+  <section class="panel" id="categoryPanel">
+    <h2>Browse categories</h2>
+    <p class="muted">Choose a subject to browse its vocabulary or limit your searches to that subject.</p>
+    <div class="category-tools">
+      <button type="button" id="allCategoriesButton" class="category-button selected">All categories <span class="count">Unfiltered</span></button>
+    </div>
+    <div id="categoryTree" aria-label="Dictionary subject categories">
+      <p class="muted">Loading offline categories…</p>
+    </div>
+    <p id="categoryStatus" class="muted" aria-live="polite">All categories selected.</p>
+  </section>
+
+  <footer id="footer">Offline dictionary · Stored in this app · No internet required</footer>
 </main>
 
 <script>
@@ -69,6 +88,13 @@ const query = document.getElementById("query");
 const results = document.getElementById("results");
 const searchButton = document.getElementById("searchButton");
 const swapButton = document.getElementById("swapButton");
+const categoryTree = document.getElementById("categoryTree");
+const categoryStatus = document.getElementById("categoryStatus");
+const allCategoriesButton = document.getElementById("allCategoriesButton");
+
+let availableCategories = [];
+let activeCategorySlug = null;
+let activeCategoryName = null;
 
 function showMessage(message) {
   results.replaceChildren();
@@ -133,9 +159,12 @@ function renderSearch() {
   }
 
   try {
-    const matches = JSON.parse(
-      window.DictionaryDB.search(direction.value, term)
-    );
+    const response = activeCategorySlug
+      ? window.DictionaryDB.searchInCategory(
+          direction.value, term, activeCategorySlug
+        )
+      : window.DictionaryDB.search(direction.value, term);
+    const matches = JSON.parse(response);
     results.replaceChildren();
 
     if (!matches.length) {
@@ -147,7 +176,8 @@ function renderSearch() {
     summary.className = "muted";
     summary.textContent =
       matches.length + (matches.length === 50 ? " results (maximum shown)" :
-      matches.length === 1 ? " result" : " results");
+      matches.length === 1 ? " result" : " results") +
+      (activeCategoryName ? " · Category: " + activeCategoryName : "");
     results.appendChild(summary);
 
     for (const entry of matches) {
@@ -177,6 +207,116 @@ function renderSearch() {
   }
 }
 
+function makeCategoryButton(category) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "category-button";
+  button.dataset.slug = category.slug;
+
+  const name = document.createElement("span");
+  name.textContent = category.name;
+  button.appendChild(name);
+
+  const count = document.createElement("span");
+  count.className = "count";
+  count.textContent = category.count.toLocaleString() + " entries";
+  button.appendChild(count);
+
+  button.addEventListener("click", () => selectCategory(category));
+  return button;
+}
+
+function renderCategoryTree() {
+  categoryTree.replaceChildren();
+
+  const usable = availableCategories.filter(category => category.count > 0);
+  const roots = usable.filter(category => !category.parentSlug);
+
+  if (!roots.length) {
+    const message = document.createElement("p");
+    message.className = "muted";
+    message.textContent = "No categorized entries are available.";
+    categoryTree.appendChild(message);
+    return;
+  }
+
+  for (const root of roots) {
+    const group = document.createElement("div");
+    group.className = "category-group";
+    group.appendChild(makeCategoryButton(root));
+
+    const children = usable
+      .filter(category => category.parentSlug === root.slug)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (children.length) {
+      const childList = document.createElement("div");
+      childList.className = "category-children";
+      for (const child of children) {
+        childList.appendChild(makeCategoryButton(child));
+      }
+      group.appendChild(childList);
+    }
+
+    categoryTree.appendChild(group);
+  }
+
+  categoryTree.querySelectorAll("[data-slug]").forEach(button => {
+    button.classList.toggle(
+      "selected",
+      button.dataset.slug === activeCategorySlug
+    );
+  });
+}
+
+function selectCategory(category) {
+  activeCategorySlug = category ? category.slug : null;
+  activeCategoryName = category ? category.name : null;
+
+  allCategoriesButton.classList.toggle("selected", !category);
+  categoryStatus.textContent = category
+    ? "Filtering searches by " + category.name + "."
+    : "All categories selected. Searches include the whole dictionary.";
+
+  renderCategoryTree();
+
+  if (query.value.trim()) {
+    renderSearch();
+  } else {
+    showMessage(category
+      ? "Selected " + category.name + ". Enter a word or phrase above to search within this category."
+      : "Enter a word or phrase to search the full dictionary.");
+  }
+}
+
+function loadCategories() {
+  if (typeof window.DictionaryDB === "undefined" ||
+      typeof window.DictionaryDB.categories !== "function") {
+    categoryTree.textContent = "";
+    const message = document.createElement("p");
+    message.className = "muted";
+    message.textContent = "Category data is unavailable. Please reopen the app.";
+    categoryTree.appendChild(message);
+    return;
+  }
+
+  try {
+    availableCategories = JSON.parse(window.DictionaryDB.categories());
+    renderCategoryTree();
+    categoryStatus.textContent =
+      availableCategories.filter(category => category.count > 0).length +
+      " categories available offline.";
+  } catch (error) {
+    categoryTree.textContent = "";
+    const message = document.createElement("p");
+    message.className = "muted";
+    message.textContent = "Could not load categories. Please reopen the app.";
+    categoryTree.appendChild(message);
+  }
+}
+
+allCategoriesButton.addEventListener("click", () => selectCategory(null));
+
 searchButton.addEventListener("click", renderSearch);
 query.addEventListener("keydown", event => {
   if (event.key === "Enter") renderSearch();
@@ -191,6 +331,8 @@ swapButton.addEventListener("click", () => {
 
 document.getElementById("footer").textContent =
   "Offline dictionary · Search stays on this device · 598,035 searchable terms";
+
+loadCategories();
 </script>
 </body>
 </html>
