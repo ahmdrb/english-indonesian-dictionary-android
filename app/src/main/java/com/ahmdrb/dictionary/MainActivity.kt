@@ -11,7 +11,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
-import java.util.zip.GZIPInputStream
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -43,12 +42,11 @@ class MainActivity : Activity() {
 
                 if (!dbFile.exists() || dbFile.length() == 0L) {
                     val tempFile = File(filesDir, "dictionary.db.tmp")
-                    assets.open("dictionary.db.gz").use { input ->
-                        GZIPInputStream(input).use { gzip ->
-                            FileOutputStream(tempFile).use { output ->
-                                gzip.copyTo(output)
-                                output.fd.sync()
-                            }
+                    tempFile.delete()
+                    assets.open("dictionary.db").use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                            output.fd.sync()
                         }
                     }
                     if (!tempFile.renameTo(dbFile)) {
