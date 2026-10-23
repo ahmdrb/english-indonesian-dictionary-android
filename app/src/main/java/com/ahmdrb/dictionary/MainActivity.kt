@@ -10,7 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.GZIPInputStream
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -49,7 +48,7 @@ class MainActivity : Activity() {
                     val tempFile = File(filesDir, "dictionary.db.tmp")
                     tempFile.delete()
 
-                    GZIPInputStream(assets.open("dictionary.db.gz")).use { input ->
+                    assets.open("dictionary.db").use { input ->
                         FileOutputStream(tempFile).use { output ->
                             input.copyTo(output)
                             output.fd.sync()
