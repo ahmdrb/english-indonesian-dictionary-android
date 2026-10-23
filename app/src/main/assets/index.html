@@ -213,7 +213,7 @@ function renderAlphabetButtons() {
     button.textContent = letter;
     button.classList.toggle("selected", letter === activeLetter);
     button.addEventListener("click", () => {
-      activeLetter = letter;
+      activeLetter = activeLetter === letter ? null : letter;
       activeOffset = 0;
       renderAlphabetButtons();
       renderBrowsePage();
@@ -225,6 +225,7 @@ function renderAlphabetButtons() {
 function renderBrowsePage() {
   if (!activeLetter) {
     alphabetStatus.textContent = "Choose a letter to begin.";
+    results.replaceChildren();
     previousPageButton.disabled = true;
     nextPageButton.disabled = true;
     return;
