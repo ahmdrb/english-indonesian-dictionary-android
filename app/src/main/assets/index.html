@@ -316,8 +316,6 @@ function renderSavedWord(entry, onRemove, removeLabel) {
   const card = document.createElement("article");
   card.className = "saved-card";
 
-  // Display only the saved word or phrase.
-  // Tap to open its dictionary entry; hold to remove it.
   const title = makeAction(entry.term, "browse-word", () => {
     if (title.longPressHandled) {
       title.longPressHandled = false;
@@ -332,50 +330,99 @@ function renderSavedWord(entry, onRemove, removeLabel) {
   let pressTimer = null;
   let longPressTriggered = false;
 
-  const cancelPress = () => {
+  function cancelPress() {
     if (pressTimer !== null) {
       clearTimeout(pressTimer);
       pressTimer = null;
     }
-  };
+  }
 
-  title.addEventListener("pointerdown", () => {
+  function showRemovalDialog() {
+    const overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:9999;" +
+      "background:rgba(0,0,0,.55);display:flex;" +
+      "align-items:center;justify-content:center;padding:20px;";
+
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "savedRemovalTitle");
+    dialog.style.cssText =
+      "box-sizing:border-box;width:100%;max-width:380px;" +
+      "background:white;color:#24334b;border-radius:16px;" +
+      "padding:22px;box-shadow:0 8px 32px rgba(0,0,0,.25);";
+
+    const heading = document.createElement("h3");
+    heading.id = "savedRemovalTitle";
+    heading.textContent = "Remove saved word?";
+    heading.style.marginTop = "0";
+
+    const message = document.createElement("p");
+    message.style.cssText = "line-height:1.6;overflow-wrap:anywhere;";
+    message.textContent = "Remove “" + entry.term + "” " +
+      (removeLabel === "Remove favorite"
+        ? "from Favorites?"
+        : "from this collection?") +
+      " The dictionary entry itself will not be deleted.";
+
+    const actions = document.createElement("div");
+    actions.style.cssText =
+      "display:flex;gap:10px;margin-top:20px;";
+
+    const cancelButton = makeAction("Cancel", "secondary-action", () => {
+      overlay.remove();
+    });
+    cancelButton.style.flex = "1";
+
+    const removeButton = makeAction("Remove", "remove-action", () => {
+      overlay.remove();
+      onRemove();
+    });
+    removeButton.style.flex = "1";
+
+    actions.appendChild(cancelButton);
+    actions.appendChild(removeButton);
+    dialog.appendChild(heading);
+    dialog.appendChild(message);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) overlay.remove();
+    });
+
+    document.body.appendChild(overlay);
+    cancelButton.focus();
+  }
+
+  function triggerRemoval() {
+    if (longPressTriggered) return;
+
+    longPressTriggered = true;
+    title.longPressHandled = true;
+    showRemovalDialog();
+  }
+
+  title.addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
     longPressTriggered = false;
     cancelPress();
 
     pressTimer = setTimeout(() => {
       pressTimer = null;
-      longPressTriggered = true;
-      title.longPressHandled = true;
-
-      if (confirm("Remove “" + entry.term + "”" +
-          (removeLabel === "Remove favorite"
-            ? " from Favorites?"
-            : " from this collection?"))) {
-        onRemove();
-      }
+      triggerRemoval();
     }, 600);
   });
 
   title.addEventListener("pointerup", cancelPress);
-  title.addEventListener("pointerleave", cancelPress);
   title.addEventListener("pointercancel", cancelPress);
 
   title.addEventListener("contextmenu", event => {
     event.preventDefault();
     cancelPress();
-
-    if (!longPressTriggered) {
-      longPressTriggered = true;
-      title.longPressHandled = true;
-
-      if (confirm("Remove “" + entry.term + "”" +
-          (removeLabel === "Remove favorite"
-            ? " from Favorites?"
-            : " from this collection?"))) {
-        onRemove();
-      }
-    }
+    triggerRemoval();
   });
 
   card.appendChild(title);
