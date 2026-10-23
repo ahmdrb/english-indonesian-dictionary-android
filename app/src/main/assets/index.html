@@ -32,13 +32,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .translation { font-size: 1.05rem; margin-top: 5px; }
 .pos { color: #596579; font-size: .85rem; margin-top: 5px; }
 footer { margin-top: 22px; color: #687386; font-size: .85rem; }
-.category-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.category-button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 11px 12px; text-align: left; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; font-weight: 600; }
-.category-button.selected { background: #e4edff; color: #173e9b; border-color: #8eafff; }
-.category-button .count { flex: 0 0 auto; color: #596579; font-size: .82rem; font-weight: 500; }
-.category-group { margin-top: 9px; }
-.category-children { margin: 7px 0 4px 15px; padding-left: 10px; border-left: 2px solid #e0e6ef; display: grid; gap: 7px; }
-.category-children .category-button { font-size: .93rem; }
+.alphabet-buttons { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
+.alphabet-button { padding: 10px 0; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; }
+.alphabet-button.selected { background: #e4edff; color: #173e9b; border-color: #8eafff; }
+.alphabet-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.alphabet-pagination button { margin-top: 0; }
+.alphabet-pagination button:disabled { opacity: .45; cursor: default; }
+.browse-word { display: block; width: 100%; margin-top: 8px; text-align: left; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; }
 </style>
 </head>
 <body>
@@ -65,16 +65,15 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
     </div>
   </section>
 
-  <section class="panel" id="categoryPanel">
-    <h2>Browse categories</h2>
-    <p class="muted">Choose a subject to browse its vocabulary or limit your searches to that subject.</p>
-    <div class="category-tools">
-      <button type="button" id="allCategoriesButton" class="category-button selected">All categories <span class="count">Unfiltered</span></button>
+  <section class="panel" id="alphabetPanel">
+    <h2>Browse A–Z</h2>
+    <p class="muted">Choose a letter to browse dictionary terms. Select a word to look it up.</p>
+    <div id="alphabetButtons" class="alphabet-buttons" aria-label="Alphabetical browsing"></div>
+    <p id="alphabetStatus" class="muted" aria-live="polite">Choose a letter to begin.</p>
+    <div class="alphabet-pagination">
+      <button id="previousPage" type="button" class="switch" disabled>Previous</button>
+      <button id="nextPage" type="button" class="switch" disabled>Next</button>
     </div>
-    <div id="categoryTree" aria-label="Dictionary subject categories">
-      <p class="muted">Loading offline categories…</p>
-    </div>
-    <p id="categoryStatus" class="muted" aria-live="polite">All categories selected.</p>
   </section>
 
   <footer id="footer">Offline dictionary · Stored in this app · No internet required</footer>
@@ -88,13 +87,14 @@ const query = document.getElementById("query");
 const results = document.getElementById("results");
 const searchButton = document.getElementById("searchButton");
 const swapButton = document.getElementById("swapButton");
-const categoryTree = document.getElementById("categoryTree");
-const categoryStatus = document.getElementById("categoryStatus");
-const allCategoriesButton = document.getElementById("allCategoriesButton");
+const alphabetButtons = document.getElementById("alphabetButtons");
+const alphabetStatus = document.getElementById("alphabetStatus");
+const previousPageButton = document.getElementById("previousPage");
+const nextPageButton = document.getElementById("nextPage");
 
-let availableCategories = [];
-let activeCategorySlug = null;
-let activeCategoryName = null;
+let activeLetter = null;
+let activeOffset = 0;
+const browsePageSize = 100;
 
 function showMessage(message) {
   results.replaceChildren();
@@ -159,11 +159,7 @@ function renderSearch() {
   }
 
   try {
-    const response = activeCategorySlug
-      ? window.DictionaryDB.searchInCategory(
-          direction.value, term, activeCategorySlug
-        )
-      : window.DictionaryDB.search(direction.value, term);
+    const response = window.DictionaryDB.search(direction.value, term);
     const matches = JSON.parse(response);
     results.replaceChildren();
 
@@ -177,7 +173,7 @@ function renderSearch() {
     summary.textContent =
       matches.length + (matches.length === 50 ? " results (maximum shown)" :
       matches.length === 1 ? " result" : " results") +
-      (activeCategoryName ? " · Category: " + activeCategoryName : "");
+      "";
     results.appendChild(summary);
 
     for (const entry of matches) {
@@ -207,122 +203,112 @@ function renderSearch() {
   }
 }
 
-function makeCategoryButton(category) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "category-button";
-  button.dataset.slug = category.slug;
+function renderAlphabetButtons() {
+  alphabetButtons.replaceChildren();
 
-  const name = document.createElement("span");
-  name.textContent = category.name;
-  button.appendChild(name);
-
-  const count = document.createElement("span");
-  count.className = "count";
-  count.textContent = category.count.toLocaleString() + " entries";
-  button.appendChild(count);
-
-  button.addEventListener("click", () => selectCategory(category));
-  return button;
+  for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "alphabet-button";
+    button.textContent = letter;
+    button.classList.toggle("selected", letter === activeLetter);
+    button.addEventListener("click", () => {
+      activeLetter = letter;
+      activeOffset = 0;
+      renderAlphabetButtons();
+      renderBrowsePage();
+    });
+    alphabetButtons.appendChild(button);
+  }
 }
 
-function renderCategoryTree() {
-  categoryTree.replaceChildren();
-
-  const usable = availableCategories.filter(category => category.count > 0);
-  const roots = usable.filter(category => !category.parentSlug);
-
-  if (!roots.length) {
-    const message = document.createElement("p");
-    message.className = "muted";
-    message.textContent = "No categorized entries are available.";
-    categoryTree.appendChild(message);
+function renderBrowsePage() {
+  if (!activeLetter) {
+    alphabetStatus.textContent = "Choose a letter to begin.";
+    previousPageButton.disabled = true;
+    nextPageButton.disabled = true;
     return;
   }
 
-  for (const root of roots) {
-    const group = document.createElement("div");
-    group.className = "category-group";
-    group.appendChild(makeCategoryButton(root));
-
-    const children = usable
-      .filter(category => category.parentSlug === root.slug)
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    if (children.length) {
-      const childList = document.createElement("div");
-      childList.className = "category-children";
-      for (const child of children) {
-        childList.appendChild(makeCategoryButton(child));
-      }
-      group.appendChild(childList);
-    }
-
-    categoryTree.appendChild(group);
-  }
-
-  categoryTree.querySelectorAll("[data-slug]").forEach(button => {
-    button.classList.toggle(
-      "selected",
-      button.dataset.slug === activeCategorySlug
-    );
-  });
-}
-
-function selectCategory(category) {
-  activeCategorySlug = category ? category.slug : null;
-  activeCategoryName = category ? category.name : null;
-
-  allCategoriesButton.classList.toggle("selected", !category);
-  categoryStatus.textContent = category
-    ? "Filtering searches by " + category.name + "."
-    : "All categories selected. Searches include the whole dictionary.";
-
-  renderCategoryTree();
-
-  if (query.value.trim()) {
-    renderSearch();
-  } else {
-    showMessage(category
-      ? "Selected " + category.name + ". Enter a word or phrase above to search within this category."
-      : "Enter a word or phrase to search the full dictionary.");
-  }
-}
-
-function loadCategories() {
   if (typeof window.DictionaryDB === "undefined" ||
-      typeof window.DictionaryDB.categories !== "function") {
-    categoryTree.textContent = "";
-    const message = document.createElement("p");
-    message.className = "muted";
-    message.textContent = "Category data is unavailable. Please reopen the app.";
-    categoryTree.appendChild(message);
+      typeof window.DictionaryDB.browseLetter !== "function") {
+    alphabetStatus.textContent = "A–Z browsing is not ready. Rebuild and install the updated APK.";
+    previousPageButton.disabled = true;
+    nextPageButton.disabled = true;
     return;
   }
 
   try {
-    availableCategories = JSON.parse(window.DictionaryDB.categories());
-    renderCategoryTree();
-    categoryStatus.textContent =
-      availableCategories.filter(category => category.count > 0).length +
-      " categories available offline.";
+    const entries = JSON.parse(window.DictionaryDB.browseLetter(
+      direction.value, activeLetter, activeOffset, browsePageSize
+    ));
+    results.replaceChildren();
+
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    summary.textContent = "Letter " + activeLetter + " · " +
+      (activeOffset + 1).toLocaleString() + " onward · " +
+      entries.length.toLocaleString() + " terms shown";
+    results.appendChild(summary);
+
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No more terms for this letter in this direction.";
+      results.appendChild(empty);
+    }
+
+    for (const entry of entries) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "browse-word";
+      button.textContent = entry.term;
+      button.addEventListener("click", () => {
+        query.value = entry.term;
+        renderSearch();
+        document.getElementById("query").scrollIntoView({
+          behavior: "smooth", block: "center"
+        });
+      });
+      results.appendChild(button);
+    }
+
+    alphabetStatus.textContent = direction.value === "en-id"
+      ? "Browsing English terms beginning with " + activeLetter + "."
+      : "Browsing Indonesian terms beginning with " + activeLetter + ".";
+
+    previousPageButton.disabled = activeOffset === 0;
+    nextPageButton.disabled = entries.length < browsePageSize;
   } catch (error) {
-    categoryTree.textContent = "";
-    const message = document.createElement("p");
-    message.className = "muted";
-    message.textContent = "Could not load categories. Please reopen the app.";
-    categoryTree.appendChild(message);
+    alphabetStatus.textContent = "Could not browse this letter. Please reopen the app.";
+    previousPageButton.disabled = true;
+    nextPageButton.disabled = true;
   }
 }
 
-allCategoriesButton.addEventListener("click", () => selectCategory(null));
+previousPageButton.addEventListener("click", () => {
+  activeOffset = Math.max(0, activeOffset - browsePageSize);
+  renderBrowsePage();
+});
+
+nextPageButton.addEventListener("click", () => {
+  activeOffset += browsePageSize;
+  renderBrowsePage();
+});
+
+direction.addEventListener("change", () => {
+  renderSearch();
+  if (activeLetter) {
+    activeOffset = 0;
+    renderBrowsePage();
+  }
+});
 
 searchButton.addEventListener("click", renderSearch);
 query.addEventListener("keydown", event => {
   if (event.key === "Enter") renderSearch();
 });
 query.addEventListener("input", renderSearch);
-direction.addEventListener("change", renderSearch);
 
 swapButton.addEventListener("click", () => {
   direction.value = direction.value === "en-id" ? "id-en" : "en-id";
@@ -330,9 +316,9 @@ swapButton.addEventListener("click", () => {
 });
 
 document.getElementById("footer").textContent =
-  "Offline dictionary · Search stays on this device · 598,035 searchable terms";
+  "Offline dictionary · A–Z browsing · 598,035 searchable terms";
 
-loadCategories();
+renderAlphabetButtons();
 </script>
 </body>
 </html>

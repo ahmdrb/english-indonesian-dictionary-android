@@ -221,6 +221,59 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun browseLetter(
+            direction: String,
+            letter: String,
+            offset: Int,
+            pageSize: Int
+        ): String {
+            val output = JSONArray()
+            val db = database ?: return output.toString()
+
+            if ((direction != "en-id" && direction != "id-en") ||
+                letter.length != 1 ||
+                letter[0].uppercaseChar() !in 'A'..'Z' ||
+                offset < 0 || offset > 2000000 ||
+                pageSize !in 1..100) {
+                return output.toString()
+            }
+
+            synchronized(db) {
+                val cursor = db.rawQuery(
+                    """
+                    SELECT t.term, e.word, e.definition, t.is_alias
+                    FROM terms t
+                    JOIN entries e ON e.id = t.entry_id
+                    WHERE t.direction = ?
+                      AND t.normalized LIKE ?
+                    ORDER BY t.normalized, t.id
+                    LIMIT ? OFFSET ?
+                    """.trimIndent(),
+                    arrayOf(
+                        direction,
+                        letter.lowercase() + "%",
+                        pageSize.toString(),
+                        offset.toString()
+                    )
+                )
+
+                cursor.use {
+                    while (it.moveToNext()) {
+                        output.put(
+                            JSONObject()
+                                .put("term", it.getString(0))
+                                .put("word", it.getString(1))
+                                .put("definition", it.getString(2))
+                                .put("alias", it.getInt(3) == 1)
+                        )
+                    }
+                }
+            }
+
+            return output.toString()
+        }
+
+        @JavascriptInterface
         fun search(direction: String, rawQuery: String): String {
             return searchInternal(direction, rawQuery, null)
         }
