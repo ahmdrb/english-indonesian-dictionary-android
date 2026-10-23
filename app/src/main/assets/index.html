@@ -78,6 +78,15 @@ function showMessage(message) {
   results.appendChild(p);
 }
 
+
+function cleanDefinitionHtml(html) {
+  return String(html)
+    .replace(/\bSee more synonyms at Thesaurus:[^<]*/gi, "")
+    .replace(/\bSynonym of [^<.!?]*(?:[.!?]|$)/gi, "")
+    .replace(/\bAntonym of [^<.!?]*(?:[.!?]|$)/gi, "")
+    .replace(/\b(?:is\s+)?synonymous with [^<.!?]*(?:[.!?]|$)/gi, "");
+}
+
 function safeDefinition(html) {
   const parsed = new DOMParser().parseFromString(html, "text/html");
   const allowed = new Set([
@@ -159,7 +168,7 @@ function renderSearch() {
 
       const definition = document.createElement("div");
       definition.className = "translation";
-      definition.appendChild(safeDefinition(entry.definition || ""));
+      definition.appendChild(safeDefinition(cleanDefinitionHtml(entry.definition || "")));
       card.appendChild(definition);
       results.appendChild(card);
     }
