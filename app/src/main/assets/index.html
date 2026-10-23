@@ -306,7 +306,7 @@ function openSavedWord(entry) {
   if (entry.direction === "en-id" || entry.direction === "id-en") {
     direction.value = entry.direction;
   }
-  renderSearch();
+  renderSearch(true);
   document.getElementById("query").scrollIntoView({
     behavior: "smooth", block: "center"
   });
@@ -571,7 +571,7 @@ function safeDefinition(html) {
   return output;
 }
 
-function renderSearch() {
+function renderSearch(exactOnly = false) {
   const term = query.value.trim();
   if (!term) {
     showMessage("Enter a word or phrase to search.");
@@ -585,7 +585,15 @@ function renderSearch() {
 
   try {
     const response = window.DictionaryDB.search(direction.value, term);
-    const matches = JSON.parse(response);
+    let matches = JSON.parse(response);
+
+    if (exactOnly) {
+      const exactTerm = term.toLocaleLowerCase();
+      matches = matches.filter(entry =>
+        String(entry.term || "").trim().toLocaleLowerCase() === exactTerm
+      ).slice(0, 1);
+    }
+
     results.replaceChildren();
 
     if (!matches.length) {
@@ -593,13 +601,14 @@ function renderSearch() {
       return;
     }
 
-    const summary = document.createElement("p");
-    summary.className = "muted";
-    summary.textContent =
-      matches.length + (matches.length === 50 ? " results (maximum shown)" :
-      matches.length === 1 ? " result" : " results") +
-      "";
-    results.appendChild(summary);
+    if (!exactOnly) {
+      const summary = document.createElement("p");
+      summary.className = "muted";
+      summary.textContent =
+        matches.length + (matches.length === 50 ? " results (maximum shown)" :
+        matches.length === 1 ? " result" : " results");
+      results.appendChild(summary);
+    }
 
     for (const entry of matches) {
       const card = document.createElement("article");
@@ -610,7 +619,7 @@ function renderSearch() {
       word.textContent = entry.term;
       card.appendChild(word);
 
-      if (entry.term !== entry.word || entry.alias) {
+      if (!exactOnly && (entry.term !== entry.word || entry.alias)) {
         const related = document.createElement("div");
         related.className = "pos";
         related.textContent = "Dictionary entry: " + entry.word;
