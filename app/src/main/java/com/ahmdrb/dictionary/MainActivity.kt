@@ -79,11 +79,29 @@ class MainActivity : Activity() {
                     webView.loadUrl("file:///android_asset/index.html")
                 }
             } catch (e: Exception) {
+                android.util.Log.e("DictionarySetup", "Dictionary initialization failed", e)
+
+                val errorType = e.javaClass.simpleName
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+
+                val errorMessage = (e.message ?: "(no message)")
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\\", "&#92;")
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+
                 runOnUiThread {
                     webView.loadData(
-                        "<html><meta charset='utf-8'><body style='font-family:sans-serif;padding:24px'>" +
+                        "<html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" +
+                            "<body style='font-family:sans-serif;padding:24px;overflow-wrap:anywhere'>" +
                             "<h3>Dictionary setup failed</h3>" +
-                            "<p>Please close and reopen the app. If this continues, the database package may need rebuilding.</p>" +
+                            "<p><b>Exception:</b> " + errorType + "</p>" +
+                            "<p><b>Message:</b> " + errorMessage + "</p>" +
+                            "<p>Please share these error details for diagnosis.</p>" +
                             "</body></html>",
                         "text/html",
                         "UTF-8"
