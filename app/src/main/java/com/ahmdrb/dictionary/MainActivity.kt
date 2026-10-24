@@ -23,7 +23,9 @@ class MainActivity : Activity() {
     private val REQUEST_EXPORT_BACKUP = 7401
     private val REQUEST_IMPORT_BACKUP = 7402
     private val REQUEST_IMPORT_PDF = 7403
+    private val REQUEST_AI_FILE = 7404
     private var pendingBackupJson: String? = null
+    private var pendingAiFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
     private lateinit var webView: WebView
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var database: SQLiteDatabase? = null
@@ -35,7 +37,35 @@ class MainActivity : Activity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
-        webView.webChromeClient = WebChromeClient()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: android.webkit.ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                pendingAiFileCallback?.onReceiveValue(null)
+                pendingAiFileCallback = filePathCallback
+
+                return try {
+                    val intent = fileChooserParams?.createIntent()
+                        ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }
+                    startActivityForResult(intent, REQUEST_AI_FILE)
+                    true
+                } catch (e: Exception) {
+                    pendingAiFileCallback?.onReceiveValue(null)
+                    pendingAiFileCallback = null
+                    android.util.Log.e(
+                        "DictionaryFilePicker",
+                        "Could not open AI vocabulary file picker",
+                        e
+                    )
+                    false
+                }
+            }
+        }
         webView.addJavascriptInterface(DictionaryBridge(), "DictionaryDB")
         webView.addJavascriptInterface(BackupBridge(), "BackupBridge")
         webView.addJavascriptInterface(PdfImportBridge(), "PdfImportBridge")
@@ -946,6 +976,23 @@ class MainActivity : Activity() {
         data: Intent?
     ) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_AI_FILE) {
+            val callback = pendingAiFileCallback
+            pendingAiFileCallback = null
+
+            if (callback != null) {
+                val selectedUri = if (resultCode == Activity.RESULT_OK) {
+                    data?.data
+                } else {
+                    null
+                }
+                callback.onReceiveValue(
+                    selectedUri?.let { arrayOf(it) } ?: emptyArray()
+                )
+            }
+            return
+        }
 
         if (requestCode != REQUEST_EXPORT_BACKUP &&
             requestCode != REQUEST_IMPORT_BACKUP &&
