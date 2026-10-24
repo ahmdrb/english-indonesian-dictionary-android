@@ -731,12 +731,80 @@ class MainActivity : Activity() {
                             .toSet()
                     }
 
+                // Filter frequent words and common English word forms
+                // for PDF vocabulary discovery only.
+                fun isCommonPdfWord(candidate: String): Boolean {
+                    if (candidate in stopWords || candidate in frequentWords) {
+                        return true
+                    }
+
+                    val bases = linkedSetOf<String>()
+                    fun addBase(value: String) {
+                        if (value.length >= 3) bases.add(value)
+                    }
+
+                    // Common inflections and spelling changes.
+                    if (candidate.endsWith("ies") && candidate.length > 4) {
+                        addBase(candidate.dropLast(3) + "y")
+                    }
+                    if (candidate.endsWith("ied") && candidate.length > 4) {
+                        addBase(candidate.dropLast(3) + "y")
+                    }
+                    if (candidate.endsWith("es") && candidate.length > 4) {
+                        addBase(candidate.dropLast(2))
+                        addBase(candidate.dropLast(1))
+                    }
+                    if (candidate.endsWith("s") && candidate.length > 3) {
+                        addBase(candidate.dropLast(1))
+                    }
+                    if (candidate.endsWith("ed") && candidate.length > 4) {
+                        val stem = candidate.dropLast(2)
+                        addBase(stem)
+                        addBase(stem + "e")
+                        if (stem.length >= 2 &&
+                            stem.last() == stem[stem.length - 2]) {
+                            addBase(stem.dropLast(1))
+                        }
+                    }
+                    if (candidate.endsWith("ing") && candidate.length > 5) {
+                        val stem = candidate.dropLast(3)
+                        addBase(stem)
+                        addBase(stem + "e")
+                        if (stem.length >= 2 &&
+                            stem.last() == stem[stem.length - 2]) {
+                            addBase(stem.dropLast(1))
+                        }
+                    }
+
+                    // Common derivatives of everyday words.
+                    for (suffix in listOf(
+                        "ly", "less", "ful", "ness", "ment",
+                        "able", "ible", "er", "est"
+                    )) {
+                        if (candidate.endsWith(suffix) &&
+                            candidate.length > suffix.length + 2) {
+                            val stem = candidate.dropLast(suffix.length)
+                            addBase(stem)
+                            if (suffix == "ly" || suffix == "ness") {
+                                addBase(stem + "y")
+                            }
+                            if (suffix == "less" || suffix == "ful" ||
+                                suffix == "able" || suffix == "ible") {
+                                addBase(stem + "e")
+                            }
+                        }
+                    }
+
+                    return bases.any {
+                        it in stopWords || it in frequentWords
+                    }
+                }
+
                 // Count individual-word occurrences only and keep at most
                 // 60,000 distinct candidates to bound memory on large PDFs.
                 val occurrences = LinkedHashMap<String, Int>()
                 for (candidate in tokens) {
-                    if (candidate in stopWords ||
-                        candidate in frequentWords) continue
+                    if (isCommonPdfWord(candidate)) continue
                     if (candidate.length > 100) continue
 
                     if (occurrences.containsKey(candidate)) {
