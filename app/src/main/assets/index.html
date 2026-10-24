@@ -242,6 +242,7 @@ body[data-page="pdf-vocabulary"] #pdfVocabularyPanel {
         <div class="entry-actions">
           <button id="pdfSelectAll" type="button" class="secondary-action">Select all</button>
           <button id="pdfSelectNone" type="button" class="secondary-action">Select none</button>
+          <button id="pdfMarkKnown" type="button" class="secondary-action">Mark selected as Known</button>
         </div>
         <div class="entry-actions">
           <button id="savePdfVocabularyCollection" type="button" class="primary">Save selected words as collection</button>
@@ -281,6 +282,7 @@ const browsePageSize = 100;
 const FAVORITES_KEY = "dictionary-favorites-v1";
 const COLLECTIONS_KEY = "dictionary-collections-v1";
 const PERSONAL_ENTRIES_KEY = "dictionary-personal-entries-v1";
+const KNOWN_WORDS_KEY = "dictionary-known-words-v1";
 
 function loadSaved(key, fallback) {
   try {
@@ -295,7 +297,23 @@ let favorites = loadSaved(FAVORITES_KEY, []);
 let collections = loadSaved(COLLECTIONS_KEY, []);
 let pdfMatchedWords = [];
 let personalEntries = loadSaved(PERSONAL_ENTRIES_KEY, []);
+let knownWords = [...new Set(
+  loadSaved(KNOWN_WORDS_KEY, [])
+    .filter(word => typeof word === "string")
+    .map(word => word.trim().toLocaleLowerCase())
+    .filter(Boolean)
+)];
 let editingPersonalEntryId = null;
+
+function saveKnownWords() {
+  try {
+    localStorage.setItem(KNOWN_WORDS_KEY, JSON.stringify(knownWords));
+    return true;
+  } catch (_) {
+    alert("Could not save Known Words. Check available app storage.");
+    return false;
+  }
+}
 
 function saveFavorites() {
   try {
@@ -1034,17 +1052,29 @@ window.onNativePdfMatches = function(rawJson, pageCount, tokenCount) {
   const reviewList = document.getElementById("pdfReviewList");
   const summary = document.getElementById("pdfReviewSummary");
 
+  let totalMatches = 0;
+
   try {
     pdfMatchedWords = JSON.parse(rawJson);
     if (!Array.isArray(pdfMatchedWords)) {
       throw new Error("Unexpected results format.");
     }
+
+    totalMatches = pdfMatchedWords.length;
+    pdfMatchedWords = pdfMatchedWords.filter(item => {
+      const term = String(item && (item.term || item.word) || "")
+        .trim()
+        .toLocaleLowerCase();
+      return !term || !knownWords.includes(term);
+    });
   } catch (error) {
     pdfMatchedWords = [];
     reviewPanel.hidden = true;
     status.textContent = "Could not display the PDF matches.";
     return;
   }
+
+  const skippedKnown = totalMatches - pdfMatchedWords.length;
 
   reviewList.replaceChildren();
   reviewPanel.hidden = false;
@@ -1056,14 +1086,19 @@ window.onNativePdfMatches = function(rawJson, pageCount, tokenCount) {
   summary.textContent =
     "Read " + pageCount + " page" + (pageCount === 1 ? "" : "s") +
     " and found " + tokenCount + " English word tokens. " +
-    pdfMatchedWords.length +
-    " dictionary matches are available. Uncheck anything you do not want to save.";
+    pdfMatchedWords.length + " dictionary matches are available." +
+    (skippedKnown
+      ? " Skipped " + skippedKnown + " match" +
+        (skippedKnown === 1 ? "" : "es") + " marked as Known."
+      : "") +
+    " Uncheck anything you do not want to save.";
 
   if (!pdfMatchedWords.length) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent =
-      "No matching English vocabulary was found. Try a PDF with different text.";
+    empty.textContent = skippedKnown
+      ? "All dictionary matches in this PDF were already marked as Known."
+      : "No matching English vocabulary was found. Try a PDF with different text.";
     reviewList.appendChild(empty);
     return;
   }
@@ -1113,6 +1148,114 @@ window.onNativePdfMatches = function(rawJson, pageCount, tokenCount) {
     reviewList.appendChild(label);
   });
 };
+
+document.getElementById("pdfMarkKnown").addEventListener("click", () => {
+  const status = document.getElementById("pdfImportStatus");
+  const selectedCheckboxes = Array.from(
+    document.querySelectorAll("#pdfReviewList input[type='checkbox']:checked")
+  );
+
+  if (!selectedCheckboxes.length) {
+    status.textContent = "Select the familiar words you already know first.";
+    return;
+  }
+
+  const selectedItems = selectedCheckboxes
+    .map(checkbox => pdfMatchedWords[Number(checkbox.dataset.index)])
+    .filter(item => item && (item.term || item.word));
+
+  const termsToMark = [...new Set(
+    selectedItems
+      .map(item => String(item.term || item.word).trim().toLocaleLowerCase())
+      .filter(Boolean)
+  )];
+
+  if (!termsToMark.length) {
+    status.textContent = "No valid words were selected.";
+    return;
+  }
+
+  const previousKnownWords = knownWords.slice();
+  knownWords = [...new Set([...knownWords, ...termsToMark])];
+
+  if (!saveKnownWords()) {
+    knownWords = previousKnownWords;
+    return;
+  }
+
+  const marked = new Set(termsToMark);
+  pdfMatchedWords = pdfMatchedWords.filter(item => {
+    const term = String(item && (item.term || item.word) || "")
+      .trim()
+      .toLocaleLowerCase();
+    return !marked.has(term);
+  });
+
+  const reviewList = document.getElementById("pdfReviewList");
+  reviewList.replaceChildren();
+
+  if (!pdfMatchedWords.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No unfamiliar matches remain in this PDF.";
+    reviewList.appendChild(empty);
+  } else {
+    pdfMatchedWords.forEach((item, index) => {
+      const label = document.createElement("label");
+      label.className = "pdf-review-item";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.dataset.index = String(index);
+      checkbox.setAttribute(
+        "aria-label",
+        "Select " + String(item.term || item.word || "vocabulary")
+      );
+
+      const details = document.createElement("span");
+      details.className = "pdf-review-details";
+
+      const title = document.createElement("strong");
+      title.textContent = String(item.term || item.word || "Unknown term");
+      details.appendChild(title);
+
+      if (item.word && item.word !== item.term) {
+        const headword = document.createElement("span");
+        headword.textContent = " — " + String(item.word);
+        details.appendChild(headword);
+      }
+
+      if (item.definition) {
+        const definition = document.createElement("span");
+        definition.className = "muted pdf-review-definition";
+        definition.textContent = String(item.definition);
+        details.appendChild(definition);
+      }
+
+      if (Number(item.occurrences) > 1) {
+        const frequency = document.createElement("span");
+        frequency.className = "muted";
+        frequency.textContent = "Found " + Number(item.occurrences) + " times";
+        details.appendChild(frequency);
+      }
+
+      label.append(checkbox, details);
+      reviewList.appendChild(label);
+    });
+  }
+
+  document.getElementById("pdfReviewSummary").textContent =
+    pdfMatchedWords.length +
+    " unfamiliar dictionary matches remain. Marked " +
+    termsToMark.length + " word" +
+    (termsToMark.length === 1 ? "" : "s") +
+    " as Known. They will be excluded from future PDF imports.";
+
+  status.textContent =
+    "Saved " + termsToMark.length + " Known Word" +
+    (termsToMark.length === 1 ? "." : "s.");
+});
 
 document.getElementById("pdfSelectAll").addEventListener("click", () => {
   document.querySelectorAll(
@@ -1556,7 +1699,8 @@ function makeBackupJson() {
     exportedAt: new Date().toISOString(),
     personalEntries: personalEntries,
     favorites: favorites,
-    collections: collections
+    collections: collections,
+    knownWords: knownWords
   }, null, 2);
 }
 
@@ -1581,7 +1725,7 @@ document.getElementById("importBackup").addEventListener("click", () => {
   }
 
   if (!confirm(
-    "Restore a JSON backup? This replaces the current Personal Vocabulary, Favorites, and Collections. Export a backup of your current data first if you want to keep it."
+    "Restore a JSON backup? This replaces the current Personal Vocabulary, Favorites, and Collections. If the backup contains Known Words, that list will also be replaced. Older backups without Known Words will leave your current Known Words list unchanged. Export a backup of your current data first if you want to keep it."
   )) {
     return;
   }
@@ -1619,6 +1763,18 @@ window.onNativeBackupFileLoaded = function(rawJson) {
       ["favorites", backup.favorites],
       ["collections", backup.collections]
     ];
+
+    if (backup.knownWords !== undefined) {
+      if (
+        !Array.isArray(backup.knownWords) ||
+        backup.knownWords.length > 100000 ||
+        backup.knownWords.some(word =>
+          typeof word !== "string" || !word.trim() || word.length > 200
+        )
+      ) {
+        throw new Error("The backup has an invalid Known Words list.");
+      }
+    }
 
     for (const [name, list] of lists) {
       if (!Array.isArray(list) || list.length > 100000) {
@@ -1678,7 +1834,10 @@ window.onNativeBackupFileLoaded = function(rawJson) {
   }
 
   if (!confirm(
-    "The backup passed validation. Replace your current Personal Vocabulary, Favorites, and Collections with the data in this file?"
+    "The backup passed validation. Replace your current Personal Vocabulary, Favorites, and Collections with the data in this file?" +
+    (backup.knownWords !== undefined
+      ? " Its Known Words list will also replace your current list."
+      : " It has no Known Words list, so your current list will be preserved.")
   )) {
     setBackupStatus("Restore cancelled. Your saved data was not changed.");
     return;
@@ -1688,17 +1847,29 @@ window.onNativeBackupFileLoaded = function(rawJson) {
   const keys = [
     PERSONAL_ENTRIES_KEY,
     FAVORITES_KEY,
-    COLLECTIONS_KEY
+    COLLECTIONS_KEY,
+    ...(backup.knownWords !== undefined ? [KNOWN_WORDS_KEY] : [])
   ];
   const previousStorage = keys.map(key => ({
     key,
     value: localStorage.getItem(key)
   }));
+  const previousKnownWords = knownWords;
 
   try {
     localStorage.setItem(PERSONAL_ENTRIES_KEY, JSON.stringify(backup.personalEntries));
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(backup.favorites));
     localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(backup.collections));
+
+    if (backup.knownWords !== undefined) {
+      const restoredKnownWords = [...new Set(
+        backup.knownWords
+          .map(word => word.trim().toLocaleLowerCase())
+          .filter(Boolean)
+      )];
+      localStorage.setItem(KNOWN_WORDS_KEY, JSON.stringify(restoredKnownWords));
+      knownWords = restoredKnownWords;
+    }
 
     personalEntries = backup.personalEntries;
     favorites = backup.favorites;
@@ -1712,7 +1883,10 @@ window.onNativeBackupFileLoaded = function(rawJson) {
       "Restore successful: " +
       personalEntries.length + " personal entries, " +
       favorites.length + " favorites, and " +
-      collections.length + " collections restored."
+      collections.length + " collections restored." +
+      (backup.knownWords !== undefined
+        ? " " + knownWords.length + " Known Words restored."
+        : " Your existing Known Words list was preserved.")
     );
   } catch (error) {
     for (const previous of previousStorage) {
@@ -1722,6 +1896,7 @@ window.onNativeBackupFileLoaded = function(rawJson) {
       } catch (_) {}
     }
 
+    knownWords = previousKnownWords;
     setBackupStatus("Restore failed while saving data. Your previous saved data was preserved where possible.");
   }
 };
