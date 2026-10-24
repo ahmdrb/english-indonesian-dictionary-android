@@ -751,6 +751,8 @@ boston
 both
 botswana
 bottle
+bottled
+bottles
 bottom
 bought
 bound
@@ -892,6 +894,9 @@ called
 calling
 calls
 calm
+calmer
+calmest
+calmly
 cam
 cambodia
 cambridge
@@ -1150,8 +1155,11 @@ classroom
 clause
 clay
 clean
+cleaned
 cleaner
+cleanest
 cleaning
+cleans
 clear
 clearance
 clearly
@@ -1531,6 +1539,8 @@ credits
 creek
 crew
 cricket
+cried
+cries
 crime
 crimes
 criminal
@@ -1551,6 +1561,7 @@ cruise
 cruises
 cruz
 cry
+crying
 crystal
 cs
 css
@@ -1666,6 +1677,9 @@ decrease
 dedicated
 deemed
 deep
+deeper
+deepest
+deeply
 deer
 def
 default
@@ -1831,6 +1845,10 @@ dirty
 disabilities
 disability
 disabled
+disappear
+disappeared
+disappearing
+disappears
 disaster
 disc
 discharge
@@ -2290,8 +2308,10 @@ expertise
 experts
 explain
 explained
+explaining
 explains
 explanation
+explanations
 explicit
 exploration
 explore
@@ -4445,6 +4465,9 @@ page
 pages
 paid
 pain
+painful
+painfully
+pains
 paint
 painted
 painting
@@ -4991,6 +5014,9 @@ purpose
 purposes
 pursuant
 push
+pushed
+pushes
+pushing
 pussy
 put
 puts
@@ -5020,6 +5046,9 @@ questions
 quick
 quickly
 quiet
+quieter
+quietest
+quietly
 quit
 quite
 quiz
@@ -6492,6 +6521,9 @@ trips
 troops
 tropical
 trouble
+troubled
+troubles
+troubling
 truck
 trucks
 true
