@@ -73,8 +73,13 @@ body[data-page] #collectionsPanel {
 }
 
 body[data-page="favorites"] #favoritesPanel,
-body[data-page="collections"] #collectionsPanel {
+body[data-page="collections"] #collectionsPanel,
+body[data-page="collection-detail"] #collectionDetailPanel {
   display: block;
+}
+
+#collectionDetailPanel {
+  display: none;
 }
 
 .saved-screen-back {
@@ -144,6 +149,13 @@ body[data-page="collections"] #collectionsPanel {
       <button id="createCollectionButton" type="button">Create collection</button>
       <p id="collectionStatus" class="muted" aria-live="polite"></p>
       <div id="collectionsList"></div>
+    </section>
+
+    <section class="panel" id="collectionDetailPanel">
+      <button type="button" class="saved-screen-back" id="backToCollections">← Back to Collections</button>
+      <h2 id="collectionDetailTitle">Collection</h2>
+      <p id="collectionDetailCount" class="muted"></p>
+      <div id="collectionWords"></div>
     </section>
   </div>
 
@@ -334,10 +346,14 @@ function addToCollection(entry) {
 
 function openSavedWord(entry) {
   query.value = entry.term;
+
   if (entry.direction === "en-id" || entry.direction === "id-en") {
     direction.value = entry.direction;
   }
+
+  navigateTo("home");
   renderSearch(true);
+
   document.getElementById("query").scrollIntoView({
     behavior: "smooth", block: "center"
   });
@@ -487,6 +503,8 @@ function renderFavorites() {
   });
 }
 
+let activeCollectionId = null;
+
 function renderCollections() {
   const list = document.getElementById("collectionsList");
   list.replaceChildren();
@@ -505,36 +523,13 @@ function renderCollections() {
     const card = document.createElement("section");
     card.className = "collection-card";
 
-    const heading = document.createElement("div");
-    heading.className = "collection-heading";
-    const title = document.createElement("h3");
-    title.textContent = collection.name;
-    heading.appendChild(title);
-    heading.appendChild(makeAction("Rename", "secondary-action", () => {
-      const next = prompt("Rename collection:", collection.name);
-      if (next === null) return;
-      const name = next.trim();
-      if (!name) {
-        alert("Collection title cannot be empty.");
-        return;
-      }
-      if (collections.some(c => c !== collection &&
-          c.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
-        alert("A collection with that title already exists.");
-        return;
-      }
-      collection.name = name.slice(0, 80);
-      saveCollections();
-      renderCollections();
-    }));
-    heading.appendChild(makeAction("Delete", "remove-action", () => {
-      if (!confirm("Delete collection \"" + collection.name +
-          "\" and all words inside it?")) return;
-      collections = collections.filter(c => c !== collection);
-      saveCollections();
-      renderCollections();
-    }));
-    card.appendChild(heading);
+    const title = makeAction(collection.name, "browse-word", () => {
+      openCollection(collection.id);
+    });
+    title.style.width = "100%";
+    title.style.textAlign = "left";
+    title.style.marginTop = "0";
+    card.appendChild(title);
 
     const count = document.createElement("p");
     count.className = "muted";
@@ -542,22 +537,98 @@ function renderCollections() {
       (collection.words.length === 1 ? "" : "s");
     card.appendChild(count);
 
-    if (!collection.words.length) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "No words yet. Add words from search or A–Z browsing.";
-      card.appendChild(empty);
-    } else {
-      collection.words.forEach((entry, index) => {
-        card.appendChild(renderSavedWord(entry, () => {
-          collection.words.splice(index, 1);
-          saveCollections();
-          renderCollections();
-        }, "Remove from collection"));
-      });
-    }
+    const actions = document.createElement("div");
+    actions.className = "entry-actions";
 
+    actions.appendChild(makeAction("Rename", "secondary-action", () => {
+      const next = prompt("Rename collection:", collection.name);
+      if (next === null) return;
+
+      const name = next.trim();
+      if (!name) {
+        alert("Collection title cannot be empty.");
+        return;
+      }
+
+      if (collections.some(c => c !== collection &&
+          c.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        alert("A collection with that title already exists.");
+        return;
+      }
+
+      collection.name = name.slice(0, 80);
+      saveCollections();
+      renderCollections();
+
+      if (document.body.dataset.page === "collection-detail" &&
+          activeCollectionId === collection.id) {
+        renderCollectionDetail();
+      }
+    }));
+
+    actions.appendChild(makeAction("Delete", "remove-action", () => {
+      if (!confirm("Delete collection \"" + collection.name +
+          "\" and all words inside it?")) return;
+
+      collections = collections.filter(c => c.id !== collection.id);
+      saveCollections();
+
+      if (activeCollectionId === collection.id) {
+        activeCollectionId = null;
+        navigateTo("collections");
+      }
+
+      renderCollections();
+    }));
+
+    card.appendChild(actions);
     list.appendChild(card);
+  });
+}
+
+function openCollection(id) {
+  activeCollectionId = id;
+  renderCollectionDetail();
+  navigateTo("collection-detail");
+}
+
+function renderCollectionDetail() {
+  const collection = collections.find(c => c.id === activeCollectionId);
+
+  if (!collection) {
+    activeCollectionId = null;
+    navigateTo("collections");
+    return;
+  }
+
+  if (!Array.isArray(collection.words)) collection.words = [];
+
+  document.getElementById("collectionDetailTitle").textContent =
+    collection.name;
+
+  document.getElementById("collectionDetailCount").textContent =
+    collection.words.length + " word" +
+    (collection.words.length === 1 ? "" : "s");
+
+  const list = document.getElementById("collectionWords");
+  list.replaceChildren();
+
+  if (!collection.words.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent =
+      "This collection is empty. Add words from dictionary search or A–Z browsing.";
+    list.appendChild(empty);
+    return;
+  }
+
+  collection.words.forEach((entry, index) => {
+    list.appendChild(renderSavedWord(entry, () => {
+      collection.words.splice(index, 1);
+      saveCollections();
+      renderCollectionDetail();
+      renderCollections();
+    }, "Remove from collection"));
   });
 }
 
@@ -594,19 +665,43 @@ function navigateTo(page) {
   } else {
     document.body.dataset.page = page;
   }
+
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
+function navigateWithHistory(page) {
+  window.history.pushState({ dictionaryPage: page }, "", "#" + page);
+  navigateTo(page);
+}
+
+window.addEventListener("popstate", event => {
+  const page = event.state && event.state.dictionaryPage;
+
+  if (!page) {
+    delete document.body.dataset.page;
+  } else {
+    document.body.dataset.page = page;
+  }
+
+  if (page === "collection-detail") {
+    renderCollectionDetail();
+  }
+});
+
 document.getElementById("openFavorites").addEventListener("click", () => {
-  navigateTo("favorites");
+  navigateWithHistory("favorites");
 });
 
 document.getElementById("openCollections").addEventListener("click", () => {
-  navigateTo("collections");
+  navigateWithHistory("collections");
 });
 
 document.querySelectorAll("[data-return-home]").forEach(button => {
-  button.addEventListener("click", () => navigateTo("home"));
+  button.addEventListener("click", () => navigateWithHistory("home"));
+});
+
+document.getElementById("backToCollections").addEventListener("click", () => {
+  navigateWithHistory("collections");
 });
 
 function showMessage(message) {

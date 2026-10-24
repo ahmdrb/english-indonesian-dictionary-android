@@ -381,6 +381,15 @@ class MainActivity : Activity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (::webView.isInitialized && webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     override fun onDestroy() {
         database?.close()
         executor.shutdown()
