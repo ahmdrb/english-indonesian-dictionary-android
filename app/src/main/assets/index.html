@@ -130,16 +130,11 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
 
     <div id="savedWordNavigation" class="panel"
          role="region" aria-label="Navigate saved words" hidden>
-      <p id="savedWordPosition" class="muted"></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" id="savedWordPrevious"
-                class="secondary-action">← Previous</button>
-        <button type="button" id="savedWordChoose"
-                class="secondary-action">☷ Words in this list</button>
-        <button type="button" id="savedWordNext"
-                class="secondary-action">Next →</button>
         <button type="button" id="savedWordGoToCollection"
                 class="secondary-action" hidden>📂 Go to Collection</button>
+        <button type="button" id="savedWordGoToFavorites"
+                class="secondary-action" hidden>⭐ Go to Favorites</button>
       </div>
     </div>
 
@@ -479,16 +474,15 @@ function getSavedWordList() {
 
 function updateSavedWordNavigation() {
   const panel = document.getElementById("savedWordNavigation");
-  const position = document.getElementById("savedWordPosition");
-  const previous = document.getElementById("savedWordPrevious");
-  const next = document.getElementById("savedWordNext");
-  const goToCollection = document.getElementById("savedWordGoToCollection");
-
-  goToCollection.hidden =
-    !savedWordNavigation || savedWordNavigation.type !== "collection";
+  const goToCollection =
+    document.getElementById("savedWordGoToCollection");
+  const goToFavorites =
+    document.getElementById("savedWordGoToFavorites");
 
   if (!savedWordNavigation) {
     panel.hidden = true;
+    goToCollection.hidden = true;
+    goToFavorites.hidden = true;
     return;
   }
 
@@ -498,26 +492,16 @@ function updateSavedWordNavigation() {
   );
 
   if (currentIndex < 0 || list.length === 0) {
-    panel.hidden = true;
     savedWordNavigation = null;
+    panel.hidden = true;
+    goToCollection.hidden = true;
+    goToFavorites.hidden = true;
     return;
   }
 
-  let listName = "Favorites";
-
-  if (savedWordNavigation.type === "collection") {
-    const collection = collections.find(
-      item => item.id === savedWordNavigation.collectionId
-    );
-    listName = collection ? collection.name : "Collection";
-  }
-
-  position.textContent =
-    listName + " · Word " + (currentIndex + 1) + " of " + list.length;
-
+  goToCollection.hidden = savedWordNavigation.type !== "collection";
+  goToFavorites.hidden = savedWordNavigation.type !== "favorites";
   panel.hidden = false;
-  previous.disabled = currentIndex === 0;
-  next.disabled = currentIndex === list.length - 1;
 }
 
 function navigateSavedWordTo(entry) {
@@ -626,47 +610,49 @@ function showSavedWordPicker() {
   filter.focus();
 }
 
-document.getElementById("savedWordPrevious").addEventListener("click", () => {
-  const list = getSavedWordList();
-  const index = list.findIndex(
-    entry => entryKey(entry) === savedWordNavigation?.currentKey
-  );
+function scrollToSavedWordCard(key, selector) {
+  requestAnimationFrame(() => {
+    const list = document.querySelector(selector);
+    if (!list) return;
 
-  if (index > 0) navigateSavedWordTo(list[index - 1]);
-});
+    const card = Array.from(list.querySelectorAll(".saved-card"))
+      .find(item => item.dataset.savedWordKey === key);
 
-document.getElementById("savedWordNext").addEventListener("click", () => {
-  const list = getSavedWordList();
-  const index = list.findIndex(
-    entry => entryKey(entry) === savedWordNavigation?.currentKey
-  );
-
-  if (index >= 0 && index < list.length - 1) {
-    navigateSavedWordTo(list[index + 1]);
-  }
-});
-
-document.getElementById("savedWordChoose").addEventListener(
-  "click", showSavedWordPicker
-);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
+}
 
 document.getElementById("savedWordGoToCollection").addEventListener(
   "click", () => {
     if (!savedWordNavigation ||
         savedWordNavigation.type !== "collection") return;
 
-    const collection = collections.find(
-      item => item.id === savedWordNavigation.collectionId
-    );
+    const collectionId = savedWordNavigation.collectionId;
+    const wordKey = savedWordNavigation.currentKey;
+    const collection = collections.find(item => item.id === collectionId);
 
     if (!collection) {
       alert("This collection could not be found.");
       return;
     }
 
-    const collectionId = collection.id;
     navigateWithHistory("collections");
     openCollection(collectionId);
+    scrollToSavedWordCard(wordKey, "#collectionWords");
+  }
+);
+
+document.getElementById("savedWordGoToFavorites").addEventListener(
+  "click", () => {
+    if (!savedWordNavigation ||
+        savedWordNavigation.type !== "favorites") return;
+
+    const wordKey = savedWordNavigation.currentKey;
+
+    navigateWithHistory("favorites");
+    scrollToSavedWordCard(wordKey, "#favoritesList");
   }
 );
 
@@ -873,6 +859,7 @@ document.getElementById("cancelPersonalEdit").addEventListener("click", () => {
 function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
   const card = document.createElement("article");
   card.className = "saved-card";
+  card.dataset.savedWordKey = entryKey(entry);
 
   const title = makeAction(entry.term, "browse-word", () => {
     if (title.longPressHandled) {
