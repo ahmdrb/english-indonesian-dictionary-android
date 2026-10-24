@@ -53,6 +53,37 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
 #createCollectionButton { width: 100%; margin-top: 10px; }
 #savedSections { scroll-margin-top: 16px; }
 
+
+/* Dedicated Favorites and Collections screens */
+#savedSections {
+  display: none;
+}
+
+body[data-page] main > *:not(#savedSections) {
+  display: none !important;
+}
+
+body[data-page] #savedSections {
+  display: block;
+}
+
+body[data-page] #favoritesPanel,
+body[data-page] #collectionsPanel {
+  display: none;
+}
+
+body[data-page="favorites"] #favoritesPanel,
+body[data-page="collections"] #collectionsPanel {
+  display: block;
+}
+
+.saved-screen-back {
+  width: 100%;
+  margin: 0 0 18px;
+  background: #e9efff;
+  color: #2049ad;
+}
+
 </style>
 </head>
 <body>
@@ -97,12 +128,14 @@ footer { margin-top: 22px; color: #687386; font-size: .85rem; }
 
   <div id="savedSections">
     <section class="panel" id="favoritesPanel">
+      <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
       <h2>★ Favorites</h2>
       <p class="muted">Your saved words, available offline.</p>
       <div id="favoritesList"></div>
     </section>
 
     <section class="panel" id="collectionsPanel">
+      <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
       <h2>▤ Collections</h2>
       <p class="muted">Create named vocabulary groups and add words from search or A–Z browsing.</p>
       <label for="collectionTitle">New collection title</label>
@@ -204,10 +237,8 @@ function addToCollection(entry) {
   if (!item.term) return;
 
   if (!collections.length) {
-    alert("Create a collection first in the Collections section.");
-    document.getElementById("collectionsPanel").scrollIntoView({
-      behavior: "smooth", block: "start"
-    });
+    alert("Create a collection first.");
+    navigateTo("collections");
     document.getElementById("collectionTitle").focus();
     return;
   }
@@ -557,15 +588,25 @@ document.getElementById("createCollectionButton").addEventListener("click", () =
   renderCollections();
 });
 
+function navigateTo(page) {
+  if (page === "home") {
+    delete document.body.dataset.page;
+  } else {
+    document.body.dataset.page = page;
+  }
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
 document.getElementById("openFavorites").addEventListener("click", () => {
-  document.getElementById("favoritesPanel").scrollIntoView({
-    behavior: "smooth", block: "start"
-  });
+  navigateTo("favorites");
 });
+
 document.getElementById("openCollections").addEventListener("click", () => {
-  document.getElementById("collectionsPanel").scrollIntoView({
-    behavior: "smooth", block: "start"
-  });
+  navigateTo("collections");
+});
+
+document.querySelectorAll("[data-return-home]").forEach(button => {
+  button.addEventListener("click", () => navigateTo("home"));
 });
 
 function showMessage(message) {
