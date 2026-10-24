@@ -721,11 +721,22 @@ class MainActivity : Activity() {
                     "smaller", "smallest", "windows"
                 )
 
+                // Load the offline frequency list for PDF imports only.
+                // This runs on the background executor, not the UI thread.
+                val frequentWords = assets.open("english-common-words.txt")
+                    .bufferedReader(Charsets.UTF_8)
+                    .useLines { lines ->
+                        lines.map { it.trim().lowercase() }
+                            .filter { it.isNotEmpty() }
+                            .toSet()
+                    }
+
                 // Count individual-word occurrences only and keep at most
                 // 60,000 distinct candidates to bound memory on large PDFs.
                 val occurrences = LinkedHashMap<String, Int>()
                 for (candidate in tokens) {
-                    if (candidate in stopWords) continue
+                    if (candidate in stopWords ||
+                        candidate in frequentWords) continue
                     if (candidate.length > 100) continue
 
                     if (occurrences.containsKey(candidate)) {
