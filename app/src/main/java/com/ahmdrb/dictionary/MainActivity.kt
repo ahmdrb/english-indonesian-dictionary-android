@@ -1,6 +1,8 @@
 package com.ahmdrb.dictionary
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -15,6 +17,9 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val packagedDictionaryVersion = 3
+    private val REQUEST_EXPORT_BACKUP = 7401
+    private val REQUEST_IMPORT_BACKUP = 7402
+    private var pendingBackupJson: String? = null
     private lateinit var webView: WebView
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var database: SQLiteDatabase? = null
@@ -28,6 +33,7 @@ class MainActivity : Activity() {
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(DictionaryBridge(), "DictionaryDB")
+        webView.addJavascriptInterface(BackupBridge(), "BackupBridge")
         setContentView(webView)
 
         webView.loadData(
@@ -380,6 +386,170 @@ class MainActivity : Activity() {
             }
 
             return output.toString()
+        }
+    }
+
+
+    inner class BackupBridge {
+        @JavascriptInterface
+        fun exportJson(json: String) {
+            if (json.isBlank() || json.length > 512_000) {
+                notifyBackupError("The backup is empty or exceeds the 512 KB safety limit.")
+                return
+            }
+
+            runOnUiThread {
+                try {
+                    pendingBackupJson = json
+                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        putExtra(
+                            Intent.EXTRA_TITLE,
+                            "english-indonesian-dictionary-backup.json"
+                        )
+                    }
+                    startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
+                } catch (e: Exception) {
+                    pendingBackupJson = null
+                    notifyBackupError(
+                        "Could not open the save dialog: " +
+                            (e.message ?: "Unknown error")
+                    )
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun importJson() {
+            runOnUiThread {
+                try {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(
+                            Intent.EXTRA_MIME_TYPES,
+                            arrayOf(
+                                "application/json",
+                                "text/json",
+                                "text/plain"
+                            )
+                        )
+                    }
+                    startActivityForResult(intent, REQUEST_IMPORT_BACKUP)
+                } catch (e: Exception) {
+                    notifyBackupError(
+                        "Could not open the file picker: " +
+                            (e.message ?: "Unknown error")
+                    )
+                }
+            }
+        }
+    }
+
+    private fun notifyBackupError(message: String) {
+        runOnUiThread {
+            if (::webView.isInitialized) {
+                webView.evaluateJavascript(
+                    "window.onNativeBackupError(" +
+                        JSONObject.quote(message) + ")",
+                    null
+                )
+            }
+        }
+    }
+
+    @Deprecated("Uses the document picker result callback for compatibility")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode != REQUEST_EXPORT_BACKUP &&
+            requestCode != REQUEST_IMPORT_BACKUP) {
+            return
+        }
+
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            pendingBackupJson = null
+            return
+        }
+
+        val uri: Uri = data.data!!
+
+        when (requestCode) {
+            REQUEST_EXPORT_BACKUP -> {
+                val json = pendingBackupJson
+                pendingBackupJson = null
+
+                if (json == null) {
+                    notifyBackupError("There is no backup data ready to save.")
+                    return
+                }
+
+                try {
+                    contentResolver.openOutputStream(uri, "wt").use { output ->
+                        if (output == null) {
+                            throw IllegalStateException(
+                                "Could not open the selected file for writing."
+                            )
+                        }
+                        output.write(json.toByteArray(Charsets.UTF_8))
+                        output.flush()
+                    }
+
+                    webView.evaluateJavascript(
+                        "window.onNativeBackupExported()",
+                        null
+                    )
+                } catch (e: Exception) {
+                    notifyBackupError(
+                        "Could not save the backup: " +
+                            (e.message ?: "Unknown error")
+                    )
+                }
+            }
+
+            REQUEST_IMPORT_BACKUP -> {
+                try {
+                    val json = contentResolver.openInputStream(uri).use { input ->
+                        if (input == null) {
+                            throw IllegalStateException(
+                                "Could not open the selected backup file."
+                            )
+                        }
+
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > 512_000) {
+                                throw IllegalArgumentException(
+                                    "The selected backup exceeds the 512 KB safety limit."
+                                )
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray().toString(Charsets.UTF_8)
+                    }
+
+                    webView.evaluateJavascript(
+                        "window.onNativeBackupFileLoaded(" +
+                            JSONObject.quote(json) + ")",
+                        null
+                    )
+                } catch (e: Exception) {
+                    notifyBackupError(
+                        "Could not read the selected file: " +
+                            (e.message ?: "Unknown error")
+                    )
+                }
+            }
         }
     }
 

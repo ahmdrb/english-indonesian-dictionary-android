@@ -20,7 +20,7 @@ h1 { font-size: 1.8rem; line-height: 1.2; }
 .status { display: inline-block; border-radius: 999px; background: #e5f6ec; color: #17653b; padding: 6px 10px; font-size: .85rem; }
 .panel { background: white; border: 1px solid #e0e6ef; border-radius: 18px; padding: 20px; margin-top: 20px; }
 label { display: block; font-weight: 650; margin: 16px 0 8px; }
-input, select { width: 100%; padding: 13px; border: 1px solid #cbd4e2; border-radius: 11px; font: inherit; background: white; color: inherit; }
+input, select, textarea { width: 100%; padding: 13px; border: 1px solid #cbd4e2; border-radius: 11px; font: inherit; background: white; color: inherit; }
 button { padding: 13px; border: 0; border-radius: 11px; background: #2457d6; color: white; font: inherit; font-weight: 650; cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #8cb0ff; outline-offset: 2px; }
 .primary { width: 100%; margin-top: 14px; }
@@ -67,11 +67,13 @@ body[data-page] #savedSections {
   display: block;
 }
 
+body[data-page] #personalEntriesPanel,
 body[data-page] #favoritesPanel,
 body[data-page] #collectionsPanel {
   display: none;
 }
 
+body[data-page="personal-entries"] #personalEntriesPanel,
 body[data-page="favorites"] #favoritesPanel,
 body[data-page="collections"] #collectionsPanel,
 body[data-page="collection-detail"] #collectionDetailPanel {
@@ -100,6 +102,10 @@ body[data-page="collection-detail"] #collectionDetailPanel {
   <div class="nav-actions" aria-label="Vocabulary sections">
     <button type="button" class="secondary-action" id="openFavorites">★ Favorites</button>
     <button type="button" class="secondary-action" id="openCollections">▤ Collections</button>
+    <button type="button" class="secondary-action" id="openPersonalEntries">✎ Personal Vocabulary</button>
+    <button type="button" class="secondary-action" id="exportBackup">Export Backup (JSON)</button>
+    <button type="button" class="secondary-action" id="importBackup">Restore Backup (JSON)</button>
+    <p id="backupStatus" class="muted" aria-live="polite"></p>
   </div>
 
   <section class="panel">
@@ -132,6 +138,30 @@ body[data-page="collection-detail"] #collectionDetailPanel {
   </section>
 
   <div id="savedSections">
+    <section class="panel" id="personalEntriesPanel">
+      <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
+      <h2>✎ Personal Vocabulary</h2>
+      <p class="muted">Build your own offline English–Indonesian vocabulary.</p>
+      <div id="personalEntryForm">
+        <label for="personalDirection">Entry direction</label>
+        <select id="personalDirection">
+          <option value="en-id">English → Indonesian</option>
+          <option value="id-en">Indonesian → English</option>
+        </select>
+        <label for="personalTerm">Word or phrase</label>
+        <input id="personalTerm" type="text" maxlength="200" autocomplete="off">
+        <label for="personalDefinition">Translation or meaning</label>
+        <textarea id="personalDefinition" rows="3" maxlength="10000"></textarea>
+        <label for="personalNotes">Notes (optional)</label>
+        <textarea id="personalNotes" rows="3" maxlength="5000"></textarea>
+        <button id="savePersonalEntry" type="button" class="primary">Save personal entry</button>
+        <button id="cancelPersonalEdit" type="button" class="switch" hidden>Cancel editing</button>
+        <p id="personalEntryStatus" class="muted" aria-live="polite"></p>
+      </div>
+      <h3>Your entries</h3>
+      <div id="personalEntriesList"></div>
+    </section>
+
     <section class="panel" id="favoritesPanel">
       <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
       <h2>★ Favorites</h2>
@@ -180,6 +210,7 @@ let activeOffset = 0;
 const browsePageSize = 100;
 const FAVORITES_KEY = "dictionary-favorites-v1";
 const COLLECTIONS_KEY = "dictionary-collections-v1";
+const PERSONAL_ENTRIES_KEY = "dictionary-personal-entries-v1";
 
 function loadSaved(key, fallback) {
   try {
@@ -192,6 +223,8 @@ function loadSaved(key, fallback) {
 
 let favorites = loadSaved(FAVORITES_KEY, []);
 let collections = loadSaved(COLLECTIONS_KEY, []);
+let personalEntries = loadSaved(PERSONAL_ENTRIES_KEY, []);
+let editingPersonalEntryId = null;
 
 function saveFavorites() {
   try {
@@ -216,10 +249,12 @@ function entryKey(entry) {
 
 function currentEntry(entry) {
   return {
+    ...entry,
     term: String(entry.term || "").trim(),
     word: String(entry.word || entry.term || "").trim(),
     definition: String(entry.definition || ""),
-    direction: direction.value
+    direction: entry.direction === "en-id" || entry.direction === "id-en"
+      ? entry.direction : direction.value
   };
 }
 
@@ -358,6 +393,170 @@ function openSavedWord(entry) {
     behavior: "smooth", block: "center"
   });
 }
+
+
+function savePersonalEntries() {
+  try {
+    localStorage.setItem(PERSONAL_ENTRIES_KEY, JSON.stringify(personalEntries));
+    return true;
+  } catch (_) {
+    alert("Could not save personal vocabulary. Check available app storage.");
+    return false;
+  }
+}
+
+function resetPersonalEntryForm() {
+  editingPersonalEntryId = null;
+  document.getElementById("personalDirection").value = direction.value;
+  document.getElementById("personalTerm").value = "";
+  document.getElementById("personalDefinition").value = "";
+  document.getElementById("personalNotes").value = "";
+  document.getElementById("savePersonalEntry").textContent = "Save personal entry";
+  document.getElementById("cancelPersonalEdit").hidden = true;
+}
+
+function editPersonalEntry(id) {
+  const entry = personalEntries.find(item => item.id === id);
+  if (!entry) return;
+
+  editingPersonalEntryId = id;
+  document.getElementById("personalDirection").value = entry.direction;
+  document.getElementById("personalTerm").value = entry.term;
+  document.getElementById("personalDefinition").value = entry.definition;
+  document.getElementById("personalNotes").value = entry.notes || "";
+  document.getElementById("savePersonalEntry").textContent = "Save changes";
+  document.getElementById("cancelPersonalEdit").hidden = false;
+  document.getElementById("personalEntryStatus").textContent = "Editing “" + entry.term + "”.";
+  document.getElementById("personalTerm").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderPersonalEntries() {
+  const list = document.getElementById("personalEntriesList");
+  list.replaceChildren();
+
+  if (!personalEntries.length) {
+    const message = document.createElement("p");
+    message.className = "muted";
+    message.textContent = "No personal entries yet. Add your first word above.";
+    list.appendChild(message);
+    return;
+  }
+
+  const sorted = [...personalEntries].sort((a, b) =>
+    a.term.localeCompare(b.term, undefined, { sensitivity: "base" })
+  );
+
+  for (const entry of sorted) {
+    const card = document.createElement("article");
+    card.className = "saved-card";
+
+    const title = document.createElement("h3");
+    title.textContent = entry.term;
+    card.appendChild(title);
+
+    const directionLabel = document.createElement("p");
+    directionLabel.className = "muted";
+    directionLabel.textContent = entry.direction === "id-en"
+      ? "Indonesian → English" : "English → Indonesian";
+    card.appendChild(directionLabel);
+
+    const definition = document.createElement("p");
+    definition.style.whiteSpace = "pre-wrap";
+    definition.textContent = entry.definition;
+    card.appendChild(definition);
+
+    if (entry.notes) {
+      const notes = document.createElement("p");
+      notes.style.whiteSpace = "pre-wrap";
+      notes.textContent = "Notes: " + entry.notes;
+      card.appendChild(notes);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "saved-actions";
+    actions.appendChild(makeAction("★ Favorites", "secondary-action", () => {
+      addFavorite(entry);
+    }));
+    actions.appendChild(makeAction("＋ Collection", "secondary-action", () => {
+      addToCollection(entry);
+    }));
+    actions.appendChild(makeAction("Edit", "secondary-action", () => {
+      editPersonalEntry(entry.id);
+    }));
+    actions.appendChild(makeAction("Delete", "remove-action", () => {
+      if (!confirm("Delete your personal entry “" + entry.term + "”? This will not change the built-in dictionary.")) return;
+      personalEntries = personalEntries.filter(item => item.id !== entry.id);
+      if (savePersonalEntries()) {
+        if (editingPersonalEntryId === entry.id) resetPersonalEntryForm();
+        renderPersonalEntries();
+        renderSearch();
+      }
+    }));
+
+    card.appendChild(actions);
+    list.appendChild(card);
+  }
+}
+
+document.getElementById("savePersonalEntry").addEventListener("click", () => {
+  const term = document.getElementById("personalTerm").value.trim();
+  const definition = document.getElementById("personalDefinition").value.trim();
+  const notes = document.getElementById("personalNotes").value.trim();
+  const entryDirection = document.getElementById("personalDirection").value;
+  const status = document.getElementById("personalEntryStatus");
+
+  if (!term || !definition) {
+    status.textContent = "Enter both a word or phrase and its translation or meaning.";
+    return;
+  }
+
+  const duplicate = personalEntries.some(item =>
+    item.id !== editingPersonalEntryId &&
+    item.direction === entryDirection &&
+    item.term.trim().toLocaleLowerCase() === term.toLocaleLowerCase()
+  );
+
+  if (duplicate) {
+    status.textContent = "An entry with this word already exists in that direction. Edit the existing entry instead.";
+    return;
+  }
+
+  const previous = editingPersonalEntryId
+    ? personalEntries.find(item => item.id === editingPersonalEntryId)
+    : null;
+
+  const item = {
+    id: previous ? previous.id : "personal-" + Date.now().toString(36) +
+      "-" + Math.random().toString(36).slice(2, 9),
+    term,
+    word: term,
+    definition,
+    notes,
+    direction: entryDirection,
+    isCustom: true
+  };
+
+  if (previous) {
+    personalEntries = personalEntries.map(existing =>
+      existing.id === previous.id ? item : existing
+    );
+  } else {
+    personalEntries.push(item);
+  }
+
+  if (!savePersonalEntries()) return;
+
+  resetPersonalEntryForm();
+  status.textContent = previous ? "Personal entry updated." : "Personal entry saved.";
+  renderPersonalEntries();
+  renderSearch();
+});
+
+document.getElementById("cancelPersonalEdit").addEventListener("click", () => {
+  resetPersonalEntryForm();
+  document.getElementById("personalEntryStatus").textContent = "Editing cancelled.";
+});
 
 function renderSavedWord(entry, onRemove, removeLabel) {
   const card = document.createElement("article");
@@ -677,7 +876,8 @@ window.handleAndroidBack = function() {
     return true;
   }
 
-  if (page === "collections" || page === "favorites") {
+  if (page === "collections" || page === "favorites" ||
+      page === "personal-entries") {
     navigateTo("home");
     return true;
   }
@@ -710,6 +910,11 @@ document.getElementById("openFavorites").addEventListener("click", () => {
 
 document.getElementById("openCollections").addEventListener("click", () => {
   navigateWithHistory("collections");
+});
+
+document.getElementById("openPersonalEntries").addEventListener("click", () => {
+  renderPersonalEntries();
+  navigateWithHistory("personal-entries");
 });
 
 document.querySelectorAll("[data-return-home]").forEach(button => {
@@ -777,34 +982,65 @@ function renderSearch(exactOnly = false) {
     return;
   }
 
-  if (typeof window.DictionaryDB === "undefined") {
-    showMessage("The offline dictionary is not ready. Please reopen the app.");
-    return;
-  }
+  let matches = [];
+  const normalized = term.toLocaleLowerCase();
 
   try {
-    const response = window.DictionaryDB.search(direction.value, term);
-    let matches = JSON.parse(response);
+    if (typeof window.DictionaryDB !== "undefined") {
+      const response = window.DictionaryDB.search(direction.value, term);
+      matches = JSON.parse(response);
+      if (!Array.isArray(matches)) matches = [];
+    }
+
+    const personalMatches = personalEntries
+      .filter(entry => entry.direction === direction.value)
+      .filter(entry => {
+        const savedTerm = String(entry.term || "");
+        return exactOnly
+          ? savedTerm.trim().toLocaleLowerCase() === normalized
+          : savedTerm.toLocaleLowerCase().includes(normalized);
+      })
+      .map(entry => ({
+        ...entry,
+        term: String(entry.term || ""),
+        word: String(entry.word || entry.term || ""),
+        definition: String(entry.definition || ""),
+        isCustom: true
+      }));
 
     if (exactOnly) {
-      const exactTerm = term.toLocaleLowerCase();
       matches = matches.filter(entry =>
-        String(entry.term || "").trim().toLocaleLowerCase() === exactTerm
-      ).slice(0, 1);
+        String(entry.term || "").trim().toLocaleLowerCase() === normalized
+      );
     }
+
+    const combined = [...personalMatches, ...matches];
+    const seen = new Set();
+    matches = combined.filter(entry => {
+      const key = String(entry.term || "").trim().toLocaleLowerCase() +
+        "|" + String(entry.definition || "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (exactOnly) matches = matches.slice(0, 1);
+    else matches = matches.slice(0, 50);
 
     results.replaceChildren();
 
     if (!matches.length) {
-      showMessage("No matching entries found. Try another spelling or switch direction.");
+      showMessage(typeof window.DictionaryDB === "undefined"
+        ? "No personal entries match. The built-in dictionary is not ready."
+        : "No matching entries found. Try another spelling or switch direction.");
       return;
     }
 
     if (!exactOnly) {
       const summary = document.createElement("p");
       summary.className = "muted";
-      summary.textContent =
-        matches.length + (matches.length === 50 ? " results (maximum shown)" :
+      summary.textContent = matches.length +
+        (matches.length === 50 ? " results (maximum shown)" :
         matches.length === 1 ? " result" : " results");
       results.appendChild(summary);
     }
@@ -818,7 +1054,12 @@ function renderSearch(exactOnly = false) {
       word.textContent = entry.term;
       card.appendChild(word);
 
-      if (!exactOnly && (entry.term !== entry.word || entry.alias)) {
+      if (entry.isCustom) {
+        const badge = document.createElement("div");
+        badge.className = "pos";
+        badge.textContent = "Personal vocabulary";
+        card.appendChild(badge);
+      } else if (!exactOnly && (entry.term !== entry.word || entry.alias)) {
         const related = document.createElement("div");
         related.className = "pos";
         related.textContent = "Dictionary entry: " + entry.word;
@@ -827,8 +1068,21 @@ function renderSearch(exactOnly = false) {
 
       const definition = document.createElement("div");
       definition.className = "translation";
-      definition.appendChild(safeDefinition(cleanDefinitionHtml(entry.definition || "")));
+      if (entry.isCustom) {
+        definition.textContent = String(entry.definition || "");
+        definition.style.whiteSpace = "pre-wrap";
+      } else {
+        definition.appendChild(safeDefinition(cleanDefinitionHtml(entry.definition || "")));
+      }
       card.appendChild(definition);
+
+      if (entry.isCustom && entry.notes) {
+        const notes = document.createElement("p");
+        notes.className = "muted";
+        notes.style.whiteSpace = "pre-wrap";
+        notes.textContent = "Notes: " + entry.notes;
+        card.appendChild(notes);
+      }
 
       const actions = document.createElement("div");
       actions.className = "entry-actions";
@@ -977,6 +1231,191 @@ document.getElementById("footer").textContent =
 renderAlphabetButtons();
 renderFavorites();
 renderCollections();
+renderPersonalEntries();
+
+// JSON backup and restore for Personal Vocabulary, Favorites, and Collections.
+function setBackupStatus(message) {
+  const status = document.getElementById("backupStatus");
+  if (status) status.textContent = message;
+}
+
+function makeBackupJson() {
+  return JSON.stringify({
+    format: "english-indonesian-dictionary-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    personalEntries: personalEntries,
+    favorites: favorites,
+    collections: collections
+  }, null, 2);
+}
+
+document.getElementById("exportBackup").addEventListener("click", () => {
+  if (!window.BackupBridge || typeof window.BackupBridge.exportJson !== "function") {
+    setBackupStatus("Backup export is unavailable in this app version.");
+    return;
+  }
+
+  try {
+    setBackupStatus("Preparing backup…");
+    window.BackupBridge.exportJson(makeBackupJson());
+  } catch (error) {
+    setBackupStatus("Could not prepare backup: " + error.message);
+  }
+});
+
+document.getElementById("importBackup").addEventListener("click", () => {
+  if (!window.BackupBridge || typeof window.BackupBridge.importJson !== "function") {
+    setBackupStatus("Backup restore is unavailable in this app version.");
+    return;
+  }
+
+  if (!confirm(
+    "Restore a JSON backup? This replaces the current Personal Vocabulary, Favorites, and Collections. Export a backup of your current data first if you want to keep it."
+  )) {
+    return;
+  }
+
+  setBackupStatus("Choose a backup JSON file…");
+  window.BackupBridge.importJson();
+});
+
+window.onNativeBackupExported = function() {
+  setBackupStatus("Backup exported successfully.");
+};
+
+window.onNativeBackupError = function(message) {
+  setBackupStatus(String(message || "The backup operation failed."));
+};
+
+window.onNativeBackupFileLoaded = function(rawJson) {
+  let backup;
+
+  try {
+    backup = JSON.parse(rawJson);
+
+    if (
+      !backup ||
+      typeof backup !== "object" ||
+      Array.isArray(backup) ||
+      backup.format !== "english-indonesian-dictionary-backup" ||
+      backup.version !== 1
+    ) {
+      throw new Error("This is not a supported dictionary backup file.");
+    }
+
+    const lists = [
+      ["personalEntries", backup.personalEntries],
+      ["favorites", backup.favorites],
+      ["collections", backup.collections]
+    ];
+
+    for (const [name, list] of lists) {
+      if (!Array.isArray(list) || list.length > 100000) {
+        throw new Error("The backup has an invalid " + name + " list.");
+      }
+
+      for (const item of list) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          throw new Error("The backup contains an invalid item in " + name + ".");
+        }
+      }
+    }
+
+    for (const entry of backup.personalEntries) {
+      if (
+        typeof entry.term !== "string" ||
+        !entry.term.trim() ||
+        typeof (entry.definition ?? entry.word) !== "string" ||
+        !["en-id", "id-en"].includes(entry.direction)
+      ) {
+        throw new Error("The backup contains an invalid Personal Vocabulary entry.");
+      }
+    }
+
+    for (const entry of backup.favorites) {
+      if (
+        typeof (entry.term ?? entry.word) !== "string" ||
+        typeof (entry.definition ?? entry.word) !== "string"
+      ) {
+        throw new Error("The backup contains an invalid Favorite.");
+      }
+    }
+
+    for (const collection of backup.collections) {
+      if (
+        typeof collection.name !== "string" ||
+        !Array.isArray(collection.words) ||
+        collection.words.length > 100000
+      ) {
+        throw new Error("The backup contains an invalid Collection.");
+      }
+
+      for (const entry of collection.words) {
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          Array.isArray(entry) ||
+          typeof (entry.term ?? entry.word) !== "string"
+        ) {
+          throw new Error("A Collection contains an invalid saved word.");
+        }
+      }
+    }
+  } catch (error) {
+    setBackupStatus("Restore cancelled: " + error.message);
+    return;
+  }
+
+  if (!confirm(
+    "The backup passed validation. Replace your current Personal Vocabulary, Favorites, and Collections with the data in this file?"
+  )) {
+    setBackupStatus("Restore cancelled. Your saved data was not changed.");
+    return;
+  }
+
+  // Preserve previous storage values so a storage failure can be rolled back.
+  const keys = [
+    PERSONAL_ENTRIES_KEY,
+    FAVORITES_KEY,
+    COLLECTIONS_KEY
+  ];
+  const previousStorage = keys.map(key => ({
+    key,
+    value: localStorage.getItem(key)
+  }));
+
+  try {
+    localStorage.setItem(PERSONAL_ENTRIES_KEY, JSON.stringify(backup.personalEntries));
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(backup.favorites));
+    localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(backup.collections));
+
+    personalEntries = backup.personalEntries;
+    favorites = backup.favorites;
+    collections = backup.collections;
+
+    if (typeof renderPersonalEntries === "function") renderPersonalEntries();
+    if (typeof renderFavorites === "function") renderFavorites();
+    if (typeof renderCollections === "function") renderCollections();
+
+    setBackupStatus(
+      "Restore successful: " +
+      personalEntries.length + " personal entries, " +
+      favorites.length + " favorites, and " +
+      collections.length + " collections restored."
+    );
+  } catch (error) {
+    for (const previous of previousStorage) {
+      try {
+        if (previous.value === null) localStorage.removeItem(previous.key);
+        else localStorage.setItem(previous.key, previous.value);
+      } catch (_) {}
+    }
+
+    setBackupStatus("Restore failed while saving data. Your previous saved data was preserved where possible.");
+  }
+};
+
 </script>
 </body>
 </html>
