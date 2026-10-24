@@ -669,6 +669,22 @@ function navigateTo(page) {
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
+window.handleAndroidBack = function() {
+  const page = document.body.dataset.page || "home";
+
+  if (page === "collection-detail") {
+    navigateTo("collections");
+    return true;
+  }
+
+  if (page === "collections" || page === "favorites") {
+    navigateTo("home");
+    return true;
+  }
+
+  return false;
+};
+
 function navigateWithHistory(page) {
   window.history.pushState({ dictionaryPage: page }, "", "#" + page);
   navigateTo(page);

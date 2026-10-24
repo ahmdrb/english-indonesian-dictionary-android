@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.webkit.WebChromeClient
 import android.webkit.WebViewClient
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
@@ -25,6 +26,7 @@ class MainActivity : Activity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
+        webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(DictionaryBridge(), "DictionaryDB")
         setContentView(webView)
 
@@ -383,8 +385,14 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
+        if (::webView.isInitialized) {
+            webView.evaluateJavascript(
+                "window.handleAndroidBack ? window.handleAndroidBack() : false"
+            ) { result ->
+                if (result != "true") {
+                    finish()
+                }
+            }
         } else {
             super.onBackPressed()
         }
