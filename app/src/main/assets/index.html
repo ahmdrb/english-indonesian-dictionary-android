@@ -243,7 +243,10 @@ body[data-page="pdf-vocabulary"] #pdfVocabularyPanel {
           <button id="pdfSelectAll" type="button" class="secondary-action">Select all</button>
           <button id="pdfSelectNone" type="button" class="secondary-action">Select none</button>
         </div>
-        <button id="savePdfVocabularyCollection" type="button" class="primary">Save selected words as collection</button>
+        <div class="entry-actions">
+          <button id="savePdfVocabularyCollection" type="button" class="primary">Save selected words as collection</button>
+          <button id="cancelPdfVocabularyImport" type="button" class="secondary-action">Cancel</button>
+        </div>
         <div id="pdfReviewList"></div>
       </div>
     </section>
@@ -1126,6 +1129,21 @@ document.getElementById("pdfSelectNone").addEventListener("click", () => {
     checkbox.checked = false;
   });
 });
+
+document.getElementById("cancelPdfVocabularyImport").addEventListener(
+  "click",
+  () => {
+    pdfMatchedWords = [];
+
+    document.getElementById("pdfCollectionName").value = "";
+    document.getElementById("pdfImportStatus").textContent = "";
+    document.getElementById("pdfReviewSummary").textContent = "";
+    document.getElementById("pdfReviewList").replaceChildren();
+    document.getElementById("pdfReviewPanel").hidden = true;
+
+    navigateWithHistory("collections");
+  }
+);
 
 document.getElementById("savePdfVocabularyCollection").addEventListener(
   "click",
