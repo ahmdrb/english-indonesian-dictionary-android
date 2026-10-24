@@ -138,6 +138,8 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
                 class="secondary-action">☷ Words in this list</button>
         <button type="button" id="savedWordNext"
                 class="secondary-action">Next →</button>
+        <button type="button" id="savedWordGoToCollection"
+                class="secondary-action" hidden>📂 Go to Collection</button>
       </div>
     </div>
 
@@ -480,6 +482,10 @@ function updateSavedWordNavigation() {
   const position = document.getElementById("savedWordPosition");
   const previous = document.getElementById("savedWordPrevious");
   const next = document.getElementById("savedWordNext");
+  const goToCollection = document.getElementById("savedWordGoToCollection");
+
+  goToCollection.hidden =
+    !savedWordNavigation || savedWordNavigation.type !== "collection";
 
   if (!savedWordNavigation) {
     panel.hidden = true;
@@ -642,6 +648,26 @@ document.getElementById("savedWordNext").addEventListener("click", () => {
 
 document.getElementById("savedWordChoose").addEventListener(
   "click", showSavedWordPicker
+);
+
+document.getElementById("savedWordGoToCollection").addEventListener(
+  "click", () => {
+    if (!savedWordNavigation ||
+        savedWordNavigation.type !== "collection") return;
+
+    const collection = collections.find(
+      item => item.id === savedWordNavigation.collectionId
+    );
+
+    if (!collection) {
+      alert("This collection could not be found.");
+      return;
+    }
+
+    const collectionId = collection.id;
+    navigateWithHistory("collections");
+    openCollection(collectionId);
+  }
 );
 
 // Typing a different query exits saved-list navigation.
