@@ -605,25 +605,18 @@ class MainActivity : Activity() {
                     "work", "life", "world", "word", "words"
                 )
 
-                // Count candidate occurrences and keep at most 60,000
-                // distinct candidates to bound memory on large documents.
+                // Count individual-word occurrences only and keep at most
+                // 60,000 distinct candidates to bound memory on large PDFs.
                 val occurrences = LinkedHashMap<String, Int>()
-                for (i in tokens.indices) {
-                    for (size in 1..6) {
-                        if (i + size > tokens.size) break
+                for (candidate in tokens) {
+                    if (candidate in stopWords) continue
+                    if (candidate.length > 100) continue
 
-                        val candidate = tokens.subList(i, i + size)
-                            .joinToString(" ")
-
-                        if (size == 1 && candidate in stopWords) continue
-                        if (candidate.length > 100) continue
-
-                        if (occurrences.containsKey(candidate)) {
-                            occurrences[candidate] =
-                                (occurrences[candidate] ?: 0) + 1
-                        } else if (occurrences.size < 60000) {
-                            occurrences[candidate] = 1
-                        }
+                    if (occurrences.containsKey(candidate)) {
+                        occurrences[candidate] =
+                            (occurrences[candidate] ?: 0) + 1
+                    } else if (occurrences.size < 60000) {
+                        occurrences[candidate] = 1
                     }
                 }
 
