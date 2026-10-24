@@ -201,7 +201,7 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
       <label for="aiVocabularyFile">Choose a JSON, CSV, or TXT file</label>
       <input id="aiVocabularyFile" type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain">
       <label for="aiVocabularyText">Or paste the AI output here</label>
-      <textarea id="aiVocabularyText" rows="8" placeholder='Paste JSON, CSV, or lines containing an English term and its Indonesian definition.'></textarea>
+      <textarea id="aiVocabularyText" rows="8" placeholder='Paste terms-only JSON, a list of English words, or older JSON with definitions.'></textarea>
       <button id="previewAiVocabulary" type="button" class="primary">Preview vocabulary</button>
       <p id="aiImportStatus" class="muted" aria-live="polite">Nothing imported yet.</p>
 
@@ -1008,15 +1008,11 @@ Avoid names, obvious basic words, duplicates, and words that have no useful cont
 
 Return ONLY valid JSON, with no Markdown fences or commentary, using this format:
 [
-  {
-    "term": "English word or phrase",
-    "definition": "Natural Indonesian definition",
-    "direction": "en-id",
-    "notes": "Short example or context from the PDF"
-  }
+  {"term": "English word or phrase"},
+  {"term": "Another useful word or phrase"}
 ]
 
-Keep definitions concise and accurate. Use the meaning intended in the PDF. Include a short context note when useful. Do not invent details that are not supported by the text.`;
+Include only the English term or phrase. Do not include definitions, translations, notes, examples, or extra fields. Do not add explanations before or after the JSON.`;
 
 let aiVocabularyCandidates = [];
 
@@ -1076,8 +1072,8 @@ function parseAiVocabulary(source, fileName = "") {
         const parts = line.split(/\s+[—–|:]\s+|\s+-\s+/);
         return parts.length >= 2
           ? { term: parts.shift(), definition: parts.join(" - ") }
-          : null;
-      }).filter(Boolean);
+          : { term: line, definition: "" };
+      });
     }
   }
 
@@ -1102,7 +1098,7 @@ function parseAiVocabulary(source, fileName = "") {
     const notes = String(row.notes || row.context || row.example || "").trim().slice(0, 2000);
     const key = term.toLocaleLowerCase();
 
-    if (!term || !definition || seen.has(key)) {
+    if (!term || seen.has(key)) {
       skipped++;
       continue;
     }
@@ -1119,7 +1115,7 @@ function parseAiVocabulary(source, fileName = "") {
   }
 
   if (!entries.length) {
-    throw new Error("No valid entries found. Each entry needs an English term and an Indonesian definition.");
+    throw new Error("No valid English terms found. Each entry needs an English term or phrase.");
   }
 
   return { entries, skipped };
@@ -1146,10 +1142,13 @@ function renderAiVocabularyReview() {
     const term = document.createElement("strong");
     term.textContent = entry.term;
 
-    const definition = document.createElement("div");
-    definition.textContent = entry.definition;
+    content.appendChild(term);
 
-    content.append(term, definition);
+    if (entry.definition) {
+      const definition = document.createElement("div");
+      definition.textContent = entry.definition;
+      content.appendChild(definition);
+    }
 
     if (entry.notes) {
       const notes = document.createElement("small");
@@ -1349,11 +1348,7 @@ document.getElementById("saveAiVocabulary")
         known.add(key);
         collection.words.push({
           term: entry.term,
-          word: entry.term,
-          definition: entry.definition,
-          notes: entry.notes || "",
-          direction: "en-id",
-          isCustom: true
+          direction: "en-id"
         });
         added++;
       }
