@@ -18,6 +18,7 @@ main { width: min(100% - 32px, 680px); margin: auto; padding: 28px 0 40px; }
 h1 { font-size: 1.8rem; line-height: 1.2; }
 .subtitle, .muted { color: #596579; line-height: 1.6; }
 .status { display: inline-block; border-radius: 999px; background: #e5f6ec; color: #17653b; padding: 6px 10px; font-size: .85rem; }
+[hidden] { display: none !important; }
 .panel { background: white; border: 1px solid #e0e6ef; border-radius: 18px; padding: 20px; margin-top: 20px; }
 label { display: block; font-weight: 650; margin: 16px 0 8px; }
 input, select, textarea { width: 100%; padding: 13px; border: 1px solid #cbd4e2; border-radius: 11px; font: inherit; background: white; color: inherit; }
@@ -126,6 +127,19 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
     <input id="query" type="search" placeholder="Try: hello, water, makan..." autocomplete="off" enterkeyhint="search">
     <button class="primary" id="searchButton" type="button">Search dictionary</button>
     <button class="switch" id="swapButton" type="button">Switch direction</button>
+
+    <div id="savedWordNavigation" class="panel"
+         role="region" aria-label="Navigate saved words" hidden>
+      <p id="savedWordPosition" class="muted"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" id="savedWordPrevious"
+                class="secondary-action">← Previous</button>
+        <button type="button" id="savedWordChoose"
+                class="secondary-action">☷ Words in this list</button>
+        <button type="button" id="savedWordNext"
+                class="secondary-action">Next →</button>
+      </div>
+    </div>
 
     <div class="result" id="results" role="status" aria-live="polite">
       <p class="muted">Try a word such as “hello” or “makan”.</p>
@@ -441,6 +455,215 @@ function addToCollection(entry) {
   select.focus();
 }
 
+
+// Tracks whether a word was opened from Favorites or a specific Collection.
+let savedWordNavigation = null;
+
+function getSavedWordList() {
+  if (!savedWordNavigation) return [];
+
+  if (savedWordNavigation.type === "favorites") {
+    return favorites;
+  }
+
+  const collection = collections.find(
+    item => item.id === savedWordNavigation.collectionId
+  );
+
+  return collection && Array.isArray(collection.words)
+    ? collection.words
+    : [];
+}
+
+function updateSavedWordNavigation() {
+  const panel = document.getElementById("savedWordNavigation");
+  const position = document.getElementById("savedWordPosition");
+  const previous = document.getElementById("savedWordPrevious");
+  const next = document.getElementById("savedWordNext");
+
+  if (!savedWordNavigation) {
+    panel.hidden = true;
+    return;
+  }
+
+  const list = getSavedWordList();
+  const currentIndex = list.findIndex(
+    entry => entryKey(entry) === savedWordNavigation.currentKey
+  );
+
+  if (currentIndex < 0 || list.length === 0) {
+    panel.hidden = true;
+    savedWordNavigation = null;
+    return;
+  }
+
+  let listName = "Favorites";
+
+  if (savedWordNavigation.type === "collection") {
+    const collection = collections.find(
+      item => item.id === savedWordNavigation.collectionId
+    );
+    listName = collection ? collection.name : "Collection";
+  }
+
+  position.textContent =
+    listName + " · Word " + (currentIndex + 1) + " of " + list.length;
+
+  panel.hidden = false;
+  previous.disabled = currentIndex === 0;
+  next.disabled = currentIndex === list.length - 1;
+}
+
+function navigateSavedWordTo(entry) {
+  if (!savedWordNavigation || !entry) return;
+
+  savedWordNavigation.currentKey = entryKey(entry);
+  openSavedWord(entry);
+  updateSavedWordNavigation();
+}
+
+function showSavedWordPicker() {
+  if (!savedWordNavigation) return;
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);" +
+    "display:flex;align-items:center;justify-content:center;padding:16px;";
+
+  const dialog = document.createElement("section");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "Choose a saved word");
+  dialog.style.cssText =
+    "box-sizing:border-box;background:var(--panel,#fff);" +
+    "color:var(--text,#182235);width:100%;max-width:480px;" +
+    "max-height:85vh;overflow:auto;padding:20px;border-radius:18px;";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Words in this list";
+  heading.style.marginTop = "0";
+  dialog.appendChild(heading);
+
+  const filter = document.createElement("input");
+  filter.type = "search";
+  filter.placeholder = "Search words…";
+  filter.setAttribute("aria-label", "Search words in this list");
+  filter.autocomplete = "off";
+  filter.style.width = "100%";
+  dialog.appendChild(filter);
+
+  const listBox = document.createElement("div");
+  listBox.style.marginTop = "12px";
+  dialog.appendChild(listBox);
+
+  let escapeHandler = null;
+
+  function closePicker() {
+    overlay.remove();
+
+    if (escapeHandler) {
+      document.removeEventListener("keydown", escapeHandler);
+      escapeHandler = null;
+    }
+  }
+
+  const close = makeAction("Close", "switch", closePicker);
+  close.style.width = "100%";
+  close.style.marginTop = "12px";
+  dialog.appendChild(close);
+
+  function renderChoices() {
+    listBox.replaceChildren();
+
+    const term = filter.value.trim().toLocaleLowerCase();
+    const list = getSavedWordList();
+    let shown = 0;
+
+    list.forEach(entry => {
+      const word = String(entry.term || entry.word || "");
+
+      if (!word.toLocaleLowerCase().includes(term)) return;
+
+      const button = makeAction(word, "browse-word", () => {
+        closePicker();
+        navigateSavedWordTo(entry);
+      });
+
+      button.style.textAlign = "left";
+      button.style.width = "100%";
+      listBox.appendChild(button);
+      shown++;
+    });
+
+    if (!shown) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No matching words.";
+      listBox.appendChild(empty);
+    }
+  }
+
+  filter.addEventListener("input", renderChoices);
+
+  overlay.addEventListener("click", event => {
+    if (event.target === overlay) closePicker();
+  });
+
+  escapeHandler = event => {
+    if (event.key === "Escape") closePicker();
+  };
+  document.addEventListener("keydown", escapeHandler);
+
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  renderChoices();
+  filter.focus();
+}
+
+document.getElementById("savedWordPrevious").addEventListener("click", () => {
+  const list = getSavedWordList();
+  const index = list.findIndex(
+    entry => entryKey(entry) === savedWordNavigation?.currentKey
+  );
+
+  if (index > 0) navigateSavedWordTo(list[index - 1]);
+});
+
+document.getElementById("savedWordNext").addEventListener("click", () => {
+  const list = getSavedWordList();
+  const index = list.findIndex(
+    entry => entryKey(entry) === savedWordNavigation?.currentKey
+  );
+
+  if (index >= 0 && index < list.length - 1) {
+    navigateSavedWordTo(list[index + 1]);
+  }
+});
+
+document.getElementById("savedWordChoose").addEventListener(
+  "click", showSavedWordPicker
+);
+
+// Typing a different query exits saved-list navigation.
+document.getElementById("query").addEventListener("input", () => {
+  if (!savedWordNavigation) return;
+
+  const list = getSavedWordList();
+  const current = list.find(
+    entry => entryKey(entry) === savedWordNavigation.currentKey
+  );
+
+  const currentTerm = String(current?.term || "")
+    .trim().toLocaleLowerCase();
+  const queryTerm = document.getElementById("query").value
+    .trim().toLocaleLowerCase();
+
+  if (!current || currentTerm !== queryTerm) {
+    savedWordNavigation = null;
+    document.getElementById("savedWordNavigation").hidden = true;
+  }
+});
+
 function openSavedWord(entry) {
   query.value = entry.term;
 
@@ -450,6 +673,7 @@ function openSavedWord(entry) {
 
   navigateTo("home");
   renderSearch(true);
+  updateSavedWordNavigation();
 
   document.getElementById("query").scrollIntoView({
     behavior: "smooth", block: "center"
@@ -620,7 +844,7 @@ document.getElementById("cancelPersonalEdit").addEventListener("click", () => {
   document.getElementById("personalEntryStatus").textContent = "Editing cancelled.";
 });
 
-function renderSavedWord(entry, onRemove, removeLabel) {
+function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
   const card = document.createElement("article");
   card.className = "saved-card";
 
@@ -629,6 +853,24 @@ function renderSavedWord(entry, onRemove, removeLabel) {
       title.longPressHandled = false;
       return;
     }
+    if (navigationContext && navigationContext.type === "favorites") {
+      savedWordNavigation = {
+        type: "favorites",
+        currentKey: entryKey(entry)
+      };
+    } else if (
+      navigationContext &&
+      navigationContext.type === "collection"
+    ) {
+      savedWordNavigation = {
+        type: "collection",
+        collectionId: navigationContext.collectionId,
+        currentKey: entryKey(entry)
+      };
+    } else {
+      savedWordNavigation = null;
+    }
+
     openSavedWord(entry);
   });
 
@@ -760,7 +1002,7 @@ function renderFavorites() {
       favorites.splice(index, 1);
       saveFavorites();
       renderFavorites();
-    }, "Remove favorite"));
+    }, "Remove favorite", { type: "favorites" }));
   });
 }
 
@@ -889,7 +1131,10 @@ function renderCollectionDetail() {
       saveCollections();
       renderCollectionDetail();
       renderCollections();
-    }, "Remove from collection"));
+    }, "Remove from collection", {
+      type: "collection",
+      collectionId: collection.id
+    }));
   });
 }
 
