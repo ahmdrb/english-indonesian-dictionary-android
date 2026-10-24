@@ -77,11 +77,13 @@ body[data-page="personal-entries"] #personalEntriesPanel,
 body[data-page="favorites"] #favoritesPanel,
 body[data-page="collections"] #collectionsPanel,
 body[data-page="collection-detail"] #collectionDetailPanel,
-body[data-page="pdf-vocabulary"] #pdfVocabularyPanel {
+body[data-page="pdf-vocabulary"] #pdfVocabularyPanel,
+body[data-page="ai-vocabulary"] #aiVocabularyPanel {
   display: block;
 }
 
-#pdfVocabularyPanel {
+#pdfVocabularyPanel,
+#aiVocabularyPanel {
   display: none;
 }
 
@@ -146,6 +148,7 @@ body[data-page="pdf-vocabulary"] #pdfVocabularyPanel {
     <button type="button" class="secondary-action" id="openFavorites">★ Favorites</button>
     <button type="button" class="secondary-action" id="openCollections">▤ Collections</button>
     <button type="button" class="secondary-action" id="openPdfVocabulary">▧ Import Vocabulary from PDF</button>
+    <button type="button" class="secondary-action" id="openAiVocabulary">✦ Import AI Vocabulary</button>
     <button type="button" class="secondary-action" id="openPersonalEntries">✎ Personal Vocabulary</button>
     <button type="button" class="secondary-action" id="exportBackup">Export Backup (JSON)</button>
     <button type="button" class="secondary-action" id="importBackup">Restore Backup (JSON)</button>
@@ -249,6 +252,43 @@ body[data-page="pdf-vocabulary"] #pdfVocabularyPanel {
           <button id="cancelPdfVocabularyImport" type="button" class="secondary-action">Cancel</button>
         </div>
         <div id="pdfReviewList"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="aiVocabularyPanel">
+      <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
+      <h2>✦ Import AI Vocabulary</h2>
+      <p class="muted">Use an AI chatbot to find useful English words and phrases in a PDF, then review and save them to your offline vocabulary.</p>
+
+      <h3>1. Generate vocabulary with AI</h3>
+      <p class="muted">Copy the prompt below, attach your PDF in an AI chatbot, and ask it to return vocabulary as JSON.</p>
+      <button id="copyAiVocabularyPrompt" type="button" class="secondary-action">Copy AI prompt</button>
+      <p id="aiPromptStatus" class="muted" aria-live="polite"></p>
+
+      <h3>2. Import the AI result</h3>
+      <label for="aiVocabularyFile">Choose a JSON, CSV, or TXT file</label>
+      <input id="aiVocabularyFile" type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain">
+      <label for="aiVocabularyText">Or paste the AI output here</label>
+      <textarea id="aiVocabularyText" rows="8" placeholder='Paste JSON, CSV, or lines containing an English term and its Indonesian definition.'></textarea>
+      <button id="previewAiVocabulary" type="button" class="primary">Preview vocabulary</button>
+      <p id="aiImportStatus" class="muted" aria-live="polite">Nothing imported yet.</p>
+
+      <div id="aiVocabularyReview" hidden>
+        <h3>3. Review and select words</h3>
+        <p id="aiVocabularySummary" class="muted"></p>
+        <div class="entry-actions">
+          <button id="selectAllAiVocabulary" type="button" class="secondary-action">Select all</button>
+          <button id="selectNoneAiVocabulary" type="button" class="secondary-action">Select none</button>
+        </div>
+        <label for="aiVocabularyDestination">Save selected entries to</label>
+        <select id="aiVocabularyDestination">
+          <option value="personal">Personal Vocabulary</option>
+          <option value="collection">A Collection</option>
+        </select>
+        <label for="aiVocabularyCollection">Collection name (if saving to a collection)</label>
+        <input id="aiVocabularyCollection" type="text" maxlength="80" placeholder="e.g. Words from my reading">
+        <button id="saveAiVocabulary" type="button" class="primary">Save selected vocabulary</button>
+        <div id="aiVocabularyReviewList"></div>
       </div>
     </section>
 
@@ -968,7 +1008,8 @@ window.handleAndroidBack = function() {
   }
 
   if (page === "collections" || page === "favorites" ||
-      page === "personal-entries" || page === "pdf-vocabulary") {
+      page === "personal-entries" || page === "pdf-vocabulary" ||
+      page === "ai-vocabulary") {
     navigateTo("home");
     return true;
   }
@@ -1022,6 +1063,10 @@ document.getElementById("chooseVocabularyPdf").addEventListener("click", () => {
   }
 });
 
+document.getElementById("openAiVocabulary").addEventListener("click", () => {
+  navigateWithHistory("ai-vocabulary");
+});
+
 document.getElementById("openPersonalEntries").addEventListener("click", () => {
   renderPersonalEntries();
   navigateWithHistory("personal-entries");
@@ -1035,6 +1080,399 @@ document.getElementById("backToCollections").addEventListener("click", () => {
   navigateWithHistory("collections");
 });
 
+
+
+
+// AI Vocabulary Import: prompt, parser, preview, and saving handlers.
+const AI_VOCABULARY_PROMPT = `Read the attached PDF and identify useful English vocabulary that a learner may not already know.
+
+Prioritize:
+- Less-common but useful English words and phrases.
+- Academic, formal, literary, and topic-specific vocabulary.
+- Idioms, phrasal verbs, collocations, and expressions.
+- Important meanings determined by the PDF's context.
+- Words worth learning rather than extremely common basic words.
+
+Avoid names, obvious basic words, duplicates, and words that have no useful context. Do not claim certainty about what the learner already knows.
+
+Return ONLY valid JSON, with no Markdown fences or commentary, using this format:
+[
+  {
+    "term": "English word or phrase",
+    "definition": "Natural Indonesian definition",
+    "direction": "en-id",
+    "notes": "Short example or context from the PDF"
+  }
+]
+
+Keep definitions concise and accurate. Use the meaning intended in the PDF. Include a short context note when useful. Do not invent details that are not supported by the text.`;
+
+let aiVocabularyCandidates = [];
+
+function parseAiVocabulary(source, fileName = "") {
+  let text = String(source || "").replace(/^\uFEFF/, "").trim();
+  if (!text) throw new Error("Paste AI output or choose a file first.");
+
+  let parsed;
+  const cleaned = text
+    .replace(/^```(?:json|csv|text|txt)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (_) {
+    parsed = null;
+  }
+
+  let rows = [];
+  if (Array.isArray(parsed)) {
+    rows = parsed;
+  } else if (parsed && typeof parsed === "object") {
+    for (const key of ["vocabulary", "words", "entries", "items", "results"]) {
+      if (Array.isArray(parsed[key])) {
+        rows = parsed[key];
+        break;
+      }
+    }
+    if (!rows.length && (parsed.term || parsed.word || parsed.phrase)) {
+      rows = [parsed];
+    }
+  }
+
+  if (!rows.length && !parsed) {
+    const lines = cleaned.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length && (fileName.toLowerCase().endsWith(".csv") ||
+        lines.some(line => line.includes("\t")))) {
+      const delimiter = lines[0].includes("\t") ? "\t" : ",";
+      const splitRow = line => line.split(delimiter).map(cell =>
+        cell.trim().replace(/^["']|["']$/g, ""));
+      const header = splitRow(lines[0]).map(cell => cell.toLowerCase());
+      const hasHeader = header.some(cell =>
+        /^(term|word|phrase|english|definition|meaning|indonesian|notes|context)$/.test(cell));
+      const columns = hasHeader ? header : [];
+      rows = lines.slice(hasHeader ? 1 : 0).map(line => {
+        const cells = splitRow(line);
+        if (columns.length) {
+          const obj = {};
+          columns.forEach((key, i) => { obj[key] = cells[i] || ""; });
+          return obj;
+        }
+        return { term: cells[0], definition: cells.slice(1).join(", ") };
+      });
+    } else {
+      rows = lines.map(line => {
+        const parts = line.split(/\s+[—–|:]\s+|\s+-\s+/);
+        return parts.length >= 2
+          ? { term: parts.shift(), definition: parts.join(" - ") }
+          : null;
+      }).filter(Boolean);
+    }
+  }
+
+  if (!rows.length) {
+    throw new Error("No vocabulary entries found. Check that the input contains JSON, CSV, or term-definition lines.");
+  }
+
+  const seen = new Set();
+  const entries = [];
+  let skipped = 0;
+
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      skipped++;
+      continue;
+    }
+
+    const term = String(row.term || row.word || row.phrase ||
+      row.english || row["English"] || "").trim().slice(0, 200);
+    const definition = String(row.definition || row.meaning ||
+      row.translation || row.indonesian || row["Indonesian"] || "").trim().slice(0, 2000);
+    const notes = String(row.notes || row.context || row.example || "").trim().slice(0, 2000);
+    const key = term.toLocaleLowerCase();
+
+    if (!term || !definition || seen.has(key)) {
+      skipped++;
+      continue;
+    }
+
+    seen.add(key);
+    entries.push({
+      term,
+      word: term,
+      definition,
+      notes,
+      direction: "en-id",
+      isCustom: true
+    });
+  }
+
+  if (!entries.length) {
+    throw new Error("No valid entries found. Each entry needs an English term and an Indonesian definition.");
+  }
+
+  return { entries, skipped };
+}
+
+function renderAiVocabularyReview() {
+  const list = document.getElementById("aiVocabularyReviewList");
+  const summary = document.getElementById("aiVocabularySummary");
+  const review = document.getElementById("aiVocabularyReview");
+
+  list.replaceChildren();
+
+  aiVocabularyCandidates.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = "vocabulary-entry";
+
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.dataset.aiIndex = String(index);
+
+    const content = document.createElement("span");
+    const term = document.createElement("strong");
+    term.textContent = entry.term;
+
+    const definition = document.createElement("div");
+    definition.textContent = entry.definition;
+
+    content.append(term, definition);
+
+    if (entry.notes) {
+      const notes = document.createElement("small");
+      notes.textContent = entry.notes;
+      content.appendChild(notes);
+    }
+
+    label.append(checkbox, content);
+    row.appendChild(label);
+    list.appendChild(row);
+  });
+
+  summary.textContent =
+    `${aiVocabularyCandidates.length} entries ready for review. ` +
+    "Uncheck any entries you do not want to save.";
+
+  review.hidden = false;
+}
+
+document.getElementById("copyAiVocabularyPrompt")
+  .addEventListener("click", async () => {
+    const status = document.getElementById("aiPromptStatus");
+
+    try {
+      await navigator.clipboard.writeText(AI_VOCABULARY_PROMPT);
+      status.textContent = "AI prompt copied. Paste it into your AI chatbot.";
+    } catch (_) {
+      const textarea = document.getElementById("aiVocabularyText");
+      textarea.value = AI_VOCABULARY_PROMPT;
+      textarea.focus();
+      textarea.select();
+      status.textContent =
+        "Prompt placed in the text box. Copy it manually, then paste your AI result here later.";
+    }
+  });
+
+document.getElementById("aiVocabularyFile")
+  .addEventListener("change", async event => {
+    const file = event.target.files && event.target.files[0];
+    const status = document.getElementById("aiImportStatus");
+
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      status.textContent = "File is too large. Please choose a file under 2 MB.";
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      document.getElementById("aiVocabularyText").value = await file.text();
+      status.textContent = `Loaded "${file.name}". Tap Preview vocabulary to review it.`;
+    } catch (_) {
+      status.textContent = "Could not read this file. Try pasting its contents instead.";
+    }
+  });
+
+document.getElementById("previewAiVocabulary")
+  .addEventListener("click", () => {
+    const status = document.getElementById("aiImportStatus");
+    const text = document.getElementById("aiVocabularyText").value;
+    const file = document.getElementById("aiVocabularyFile").files[0];
+    const fileName = file ? file.name : "";
+
+    try {
+      const result = parseAiVocabulary(text, fileName);
+      aiVocabularyCandidates = result.entries;
+      renderAiVocabularyReview();
+
+      status.textContent =
+        `Preview ready: ${result.entries.length} valid entries. ` +
+        `${result.skipped} duplicate or invalid entries skipped during parsing.`;
+    } catch (error) {
+      aiVocabularyCandidates = [];
+      document.getElementById("aiVocabularyReview").hidden = true;
+      status.textContent = error.message || "Could not parse the vocabulary.";
+    }
+  });
+
+document.getElementById("selectAllAiVocabulary")
+  .addEventListener("click", () => {
+    document.querySelectorAll("#aiVocabularyReviewList input[data-ai-index]")
+      .forEach(input => { input.checked = true; });
+  });
+
+document.getElementById("selectNoneAiVocabulary")
+  .addEventListener("click", () => {
+    document.querySelectorAll("#aiVocabularyReviewList input[data-ai-index]")
+      .forEach(input => { input.checked = false; });
+  });
+
+document.getElementById("saveAiVocabulary")
+  .addEventListener("click", () => {
+    const status = document.getElementById("aiImportStatus");
+    const selected = Array.from(
+      document.querySelectorAll("#aiVocabularyReviewList input[data-ai-index]")
+    )
+      .filter(input => input.checked)
+      .map(input => aiVocabularyCandidates[Number(input.dataset.aiIndex)])
+      .filter(Boolean);
+
+    if (!selected.length) {
+      status.textContent = "Select at least one entry before saving.";
+      return;
+    }
+
+    const destination =
+      document.getElementById("aiVocabularyDestination").value;
+
+    let added = 0;
+    let skipped = 0;
+
+    if (destination === "personal") {
+      const nextEntries = personalEntries.slice();
+      const known = new Set(nextEntries.map(entry => entryKey(entry)));
+
+      for (const entry of selected) {
+        const key = entryKey(entry);
+
+        if (known.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        known.add(key);
+        nextEntries.push({
+          id: Date.now().toString(36) +
+            Math.random().toString(36).slice(2, 7),
+          term: entry.term,
+          word: entry.term,
+          definition: entry.definition,
+          notes: entry.notes || "",
+          direction: "en-id",
+          isCustom: true
+        });
+        added++;
+      }
+
+      if (added === 0) {
+        status.textContent =
+          `Nothing new to save. ${skipped} entries were already in Personal Vocabulary.`;
+        return;
+      }
+
+      const previousEntries = personalEntries;
+      personalEntries = nextEntries;
+
+      if (!savePersonalEntries()) {
+        personalEntries = previousEntries;
+        return;
+      }
+
+      renderPersonalEntries();
+    } else if (destination === "collection") {
+      const input = document.getElementById("aiVocabularyCollection");
+      const name = input.value.trim();
+
+      if (!name) {
+        status.textContent = "Enter a name for the Collection first.";
+        input.focus();
+        return;
+      }
+
+      const previousCollections = collections;
+      const nextCollections = collections.map(collection => ({
+        ...collection,
+        words: Array.isArray(collection.words)
+          ? collection.words.slice()
+          : []
+      }));
+
+      let collection = nextCollections.find(item =>
+        String(item.name || "").trim().toLocaleLowerCase() ===
+        name.toLocaleLowerCase()
+      );
+
+      if (!collection) {
+        collection = {
+          id: Date.now().toString(36) +
+            Math.random().toString(36).slice(2, 7),
+          name,
+          words: []
+        };
+        nextCollections.push(collection);
+      }
+
+      const known = new Set(collection.words.map(entry => entryKey(entry)));
+
+      for (const entry of selected) {
+        const key = entryKey(entry);
+
+        if (known.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        known.add(key);
+        collection.words.push({
+          term: entry.term,
+          word: entry.term,
+          definition: entry.definition,
+          notes: entry.notes || "",
+          direction: "en-id",
+          isCustom: true
+        });
+        added++;
+      }
+
+      if (added === 0) {
+        status.textContent =
+          `Nothing new to save. ${skipped} entries were already in "${name}".`;
+        return;
+      }
+
+      collections = nextCollections;
+
+      if (!saveCollections()) {
+        collections = previousCollections;
+        return;
+      }
+
+      renderCollections();
+    } else {
+      status.textContent = "Please choose a valid save destination.";
+      return;
+    }
+
+    status.textContent =
+      `Success! Added ${added} entr${added === 1 ? "y" : "ies"}. ` +
+      `${skipped} duplicate entr${skipped === 1 ? "y was" : "ies were"} skipped.`;
+
+    document.getElementById("aiVocabularyReview").hidden = true;
+    aiVocabularyCandidates = [];
+  });
 
 window.onNativePdfStatus = function(message) {
   document.getElementById("pdfImportStatus").textContent =
