@@ -13,12 +13,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.text.PDFTextStripper
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val packagedDictionaryVersion = 3
     private val REQUEST_EXPORT_BACKUP = 7401
     private val REQUEST_IMPORT_BACKUP = 7402
+    private val REQUEST_IMPORT_PDF = 7403
     private var pendingBackupJson: String? = null
     private lateinit var webView: WebView
     private val executor = Executors.newSingleThreadExecutor()
@@ -34,6 +38,7 @@ class MainActivity : Activity() {
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(DictionaryBridge(), "DictionaryDB")
         webView.addJavascriptInterface(BackupBridge(), "BackupBridge")
+        webView.addJavascriptInterface(PdfImportBridge(), "PdfImportBridge")
         setContentView(webView)
 
         webView.loadData(
@@ -447,6 +452,293 @@ class MainActivity : Activity() {
         }
     }
 
+
+    inner class PdfImportBridge {
+        @JavascriptInterface
+        fun choosePdf() {
+            runOnUiThread {
+                try {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/pdf"
+                    }
+                    startActivityForResult(intent, REQUEST_IMPORT_PDF)
+                } catch (e: Exception) {
+                    notifyPdfError(
+                        "Could not open the PDF picker: " +
+                            (e.message ?: "Unknown error")
+                    )
+                }
+            }
+        }
+    }
+
+    private fun notifyPdfStatus(message: String) {
+        runOnUiThread {
+            if (::webView.isInitialized) {
+                webView.evaluateJavascript(
+                    "window.onNativePdfStatus(" +
+                        JSONObject.quote(message) + ")",
+                    null
+                )
+            }
+        }
+    }
+
+    private fun notifyPdfError(message: String) {
+        runOnUiThread {
+            if (::webView.isInitialized) {
+                webView.evaluateJavascript(
+                    "window.onNativePdfError(" +
+                        JSONObject.quote(message) + ")",
+                    null
+                )
+            }
+        }
+    }
+
+    private fun processPdf(uri: Uri) {
+        executor.execute {
+            try {
+                notifyPdfStatus("Opening PDF…")
+
+                PDFBoxResourceLoader.init(applicationContext)
+
+                val extracted = StringBuilder()
+                var pageCount = 0
+
+                contentResolver.openInputStream(uri).use { input ->
+                    if (input == null) {
+                        throw IllegalStateException(
+                            "Could not open the selected PDF."
+                        )
+                    }
+
+                    PDDocument.load(input).use { document ->
+                        pageCount = document.numberOfPages
+
+                        if (pageCount == 0) {
+                            throw IllegalArgumentException(
+                                "The PDF contains no pages."
+                            )
+                        }
+                        if (pageCount > 2000) {
+                            throw IllegalArgumentException(
+                                "This PDF has more than 2,000 pages. " +
+                                    "Please use a smaller PDF."
+                            )
+                        }
+
+                        val stripper = PDFTextStripper()
+
+                        for (page in 1..pageCount) {
+                            stripper.startPage = page
+                            stripper.endPage = page
+                            extracted.append(stripper.getText(document))
+                                .append('\n')
+
+                            if (extracted.length > 5_000_000) {
+                                throw IllegalArgumentException(
+                                    "Extracted text exceeds the 5 MB safety " +
+                                        "limit. Please use a smaller PDF."
+                                )
+                            }
+
+                            if (page == 1 || page % 5 == 0 ||
+                                page == pageCount) {
+                                notifyPdfStatus(
+                                    "Reading PDF: page $page of $pageCount…"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (extracted.isBlank()) {
+                    throw IllegalArgumentException(
+                        "No selectable text was found. This may be a " +
+                            "scanned PDF; image OCR is not supported yet."
+                    )
+                }
+
+                val db = database ?: throw IllegalStateException(
+                    "The dictionary database is not ready."
+                )
+
+                notifyPdfStatus("Finding vocabulary in the dictionary…")
+
+                val tokenRegex =
+                    Regex("[A-Za-z]+(?:['’-][A-Za-z]+)*")
+
+                val tokens = tokenRegex.findAll(extracted.toString())
+                    .map { it.value.lowercase() }
+                    .toList()
+
+                val stopWords = setOf(
+                    "a", "an", "the", "and", "or", "but", "if", "then",
+                    "else", "when", "while", "where", "what", "which",
+                    "who", "whom", "whose", "why", "how", "is", "am",
+                    "are", "was", "were", "be", "been", "being", "do",
+                    "does", "did", "have", "has", "had", "can", "could",
+                    "will", "would", "shall", "should", "may", "might",
+                    "must", "to", "of", "in", "on", "at", "by", "for",
+                    "from", "with", "without", "about", "as", "into",
+                    "through", "over", "under", "between", "after",
+                    "before", "up", "down", "out", "off", "not", "no",
+                    "nor", "so", "than", "too", "very", "it", "its",
+                    "this", "that", "these", "those", "i", "me", "my",
+                    "we", "us", "our", "you", "your", "he", "him",
+                    "his", "she", "her", "they", "them", "their",
+                    "there", "here", "all", "any", "some", "each",
+                    "every", "much", "many", "more", "most", "other",
+                    "such", "only", "own", "same", "also", "just",
+                    "now", "once", "again", "still", "already",
+                    "because", "although", "though", "however",
+                    "therefore", "thus", "yet", "both", "either",
+                    "neither", "one", "two", "three", "first", "last",
+                    "new", "old", "good", "bad", "great", "little",
+                    "big", "long", "high", "low", "well", "even",
+                    "back", "way", "thing", "things", "people",
+                    "person", "man", "woman", "men", "women",
+                    "day", "days", "time", "times", "year", "years",
+                    "part", "case", "kind", "number", "place",
+                    "work", "life", "world", "word", "words"
+                )
+
+                // Count candidate occurrences and keep at most 60,000
+                // distinct candidates to bound memory on large documents.
+                val occurrences = LinkedHashMap<String, Int>()
+                for (i in tokens.indices) {
+                    for (size in 1..6) {
+                        if (i + size > tokens.size) break
+
+                        val candidate = tokens.subList(i, i + size)
+                            .joinToString(" ")
+
+                        if (size == 1 && candidate in stopWords) continue
+                        if (candidate.length > 100) continue
+
+                        if (occurrences.containsKey(candidate)) {
+                            occurrences[candidate] =
+                                (occurrences[candidate] ?: 0) + 1
+                        } else if (occurrences.size < 60000) {
+                            occurrences[candidate] = 1
+                        }
+                    }
+                }
+
+                if (occurrences.isEmpty()) {
+                    throw IllegalArgumentException(
+                        "No usable English words were found in this PDF."
+                    )
+                }
+
+                data class Match(
+                    val term: String,
+                    val word: String,
+                    val definition: String,
+                    val normalized: String,
+                    val alias: Boolean,
+                    val occurrences: Int
+                )
+
+                val matches = LinkedHashMap<String, Match>()
+                val candidates = occurrences.keys.toList()
+                val chunks = candidates.chunked(250)
+
+                synchronized(db) {
+                    chunks.forEachIndexed { chunkIndex, chunk ->
+                        val placeholders =
+                            chunk.joinToString(",") { "?" }
+
+                        val sql = """
+                            SELECT t.term, e.word, e.definition,
+                                   t.normalized, t.is_alias
+                            FROM terms t
+                            JOIN entries e ON e.id = t.entry_id
+                            WHERE t.direction = 'en-id'
+                              AND t.normalized IN ($placeholders)
+                            ORDER BY t.is_alias ASC, t.id ASC
+                        """.trimIndent()
+
+                        val cursor = db.rawQuery(sql, chunk.toTypedArray())
+                        cursor.use {
+                            while (it.moveToNext()) {
+                                val term = it.getString(0) ?: continue
+                                val word = it.getString(1) ?: term
+                                val definition = it.getString(2) ?: ""
+                                val normalized = it.getString(3)
+                                    ?.trim()?.lowercase() ?: continue
+                                val alias = it.getInt(4) != 0
+
+                                if (!occurrences.containsKey(normalized)) {
+                                    continue
+                                }
+
+                                val previous = matches[normalized]
+                                if (previous == null ||
+                                    (previous.alias && !alias)) {
+                                    matches[normalized] = Match(
+                                        term = term,
+                                        word = word,
+                                        definition = definition,
+                                        normalized = normalized,
+                                        alias = alias,
+                                        occurrences =
+                                            occurrences[normalized] ?: 1
+                                    )
+                                }
+                            }
+                        }
+
+                        if (chunkIndex % 10 == 0 ||
+                            chunkIndex == chunks.lastIndex) {
+                            notifyPdfStatus(
+                                "Matching dictionary terms: " +
+                                    "${chunkIndex + 1} of ${chunks.size} batches…"
+                            )
+                        }
+                    }
+                }
+
+                val ranked = matches.values.sortedWith(
+                    compareByDescending<Match> {
+                        it.normalized.split(Regex("\\s+")).size
+                    }.thenByDescending {
+                        it.occurrences
+                    }.thenBy {
+                        it.normalized
+                    }
+                ).take(1000)
+
+                val output = JSONArray()
+                for (match in ranked) {
+                    output.put(
+                        JSONObject()
+                            .put("term", match.term)
+                            .put("word", match.word)
+                            .put("definition", match.definition)
+                            .put("direction", "en-id")
+                            .put("occurrences", match.occurrences)
+                    )
+                }
+
+                runOnUiThread {
+                    webView.evaluateJavascript(
+                        "window.onNativePdfMatches(" +
+                            JSONObject.quote(output.toString()) + "," +
+                            pageCount + "," + tokens.size + ")",
+                        null
+                    )
+                }
+            } catch (e: Exception) {
+                notifyPdfError(
+                    e.message ?: "Could not read or process this PDF."
+                )
+            }
+        }
+    }
+
     private fun notifyBackupError(message: String) {
         runOnUiThread {
             if (::webView.isInitialized) {
@@ -468,12 +760,15 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode != REQUEST_EXPORT_BACKUP &&
-            requestCode != REQUEST_IMPORT_BACKUP) {
+            requestCode != REQUEST_IMPORT_BACKUP &&
+            requestCode != REQUEST_IMPORT_PDF) {
             return
         }
 
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
-            pendingBackupJson = null
+            if (requestCode == REQUEST_EXPORT_BACKUP) {
+                pendingBackupJson = null
+            }
             return
         }
 
@@ -550,6 +845,8 @@ class MainActivity : Activity() {
                     )
                 }
             }
+
+            REQUEST_IMPORT_PDF -> processPdf(uri)
         }
     }
 
@@ -573,6 +870,7 @@ class MainActivity : Activity() {
         executor.shutdown()
         if (::webView.isInitialized) {
             webView.removeJavascriptInterface("DictionaryDB")
+            webView.removeJavascriptInterface("PdfImportBridge")
             webView.destroy()
         }
         super.onDestroy()
