@@ -77,51 +77,11 @@ body[data-page="personal-entries"] #personalEntriesPanel,
 body[data-page="favorites"] #favoritesPanel,
 body[data-page="collections"] #collectionsPanel,
 body[data-page="collection-detail"] #collectionDetailPanel,
-body[data-page="pdf-vocabulary"] #pdfVocabularyPanel,
 body[data-page="ai-vocabulary"] #aiVocabularyPanel {
   display: block;
 }
 
-#pdfVocabularyPanel,
 #aiVocabularyPanel {
-  display: none;
-}
-
-#pdfReviewList label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 0;
-  border-bottom: 1px solid #edf0f5;
-  font-weight: 500;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-#pdfReviewList input[type="checkbox"] {
-  width: 20px;
-  min-width: 20px;
-  margin-top: 3px;
-}
-
-.pdf-review-details {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.pdf-review-definition {
-  display: block;
-  font-weight: 400;
-}
-
-#pdfReviewList label {
-  margin: 0;
-}
-
-#pdfReviewPanel[hidden] {
   display: none;
 }
 
@@ -147,7 +107,6 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
   <div class="nav-actions" aria-label="Vocabulary sections">
     <button type="button" class="secondary-action" id="openFavorites">★ Favorites</button>
     <button type="button" class="secondary-action" id="openCollections">▤ Collections</button>
-    <button type="button" class="secondary-action" id="openPdfVocabulary">▧ Import Vocabulary from PDF</button>
     <button type="button" class="secondary-action" id="openAiVocabulary">✦ Import AI Vocabulary</button>
     <button type="button" class="secondary-action" id="openPersonalEntries">✎ Personal Vocabulary</button>
     <button type="button" class="secondary-action" id="exportBackup">Export Backup (JSON)</button>
@@ -226,33 +185,6 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
       <button id="createCollectionButton" type="button">Create collection</button>
       <p id="collectionStatus" class="muted" aria-live="polite"></p>
       <div id="collectionsList"></div>
-    </section>
-
-    <section class="panel" id="pdfVocabularyPanel">
-      <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
-      <h2>▧ Import Vocabulary from PDF</h2>
-      <p class="muted">Extract selectable PDF text on this device, match English words and phrases in the offline dictionary, and review the results before saving.</p>
-
-      <label for="pdfCollectionName">New collection name</label>
-      <input id="pdfCollectionName" type="text" maxlength="80" placeholder="e.g. Vocabulary from a Novel" autocomplete="off">
-
-      <button id="chooseVocabularyPdf" type="button" class="primary">Choose PDF file</button>
-      <p id="pdfImportStatus" class="muted" aria-live="polite">Choose a PDF to begin. Scanned image-only PDFs are not supported by this importer.</p>
-
-      <div id="pdfReviewPanel" hidden>
-        <h3 id="pdfReviewHeading">Review matched vocabulary</h3>
-        <p id="pdfReviewSummary" class="muted"></p>
-        <div class="entry-actions">
-          <button id="pdfSelectAll" type="button" class="secondary-action">Select all</button>
-          <button id="pdfSelectNone" type="button" class="secondary-action">Select none</button>
-          <button id="pdfMarkKnown" type="button" class="secondary-action">Mark selected as Known</button>
-        </div>
-        <div class="entry-actions">
-          <button id="savePdfVocabularyCollection" type="button" class="primary">Save selected words as collection</button>
-          <button id="cancelPdfVocabularyImport" type="button" class="secondary-action">Cancel</button>
-        </div>
-        <div id="pdfReviewList"></div>
-      </div>
     </section>
 
     <section class="panel" id="aiVocabularyPanel">
@@ -335,7 +267,6 @@ function loadSaved(key, fallback) {
 
 let favorites = loadSaved(FAVORITES_KEY, []);
 let collections = loadSaved(COLLECTIONS_KEY, []);
-let pdfMatchedWords = [];
 let personalEntries = loadSaved(PERSONAL_ENTRIES_KEY, []);
 let knownWords = [...new Set(
   loadSaved(KNOWN_WORDS_KEY, [])
@@ -1008,8 +939,7 @@ window.handleAndroidBack = function() {
   }
 
   if (page === "collections" || page === "favorites" ||
-      page === "personal-entries" || page === "pdf-vocabulary" ||
-      page === "ai-vocabulary") {
+      page === "personal-entries" || page === "ai-vocabulary") {
     navigateTo("home");
     return true;
   }
@@ -1042,25 +972,6 @@ document.getElementById("openFavorites").addEventListener("click", () => {
 
 document.getElementById("openCollections").addEventListener("click", () => {
   navigateWithHistory("collections");
-});
-
-document.getElementById("openPdfVocabulary").addEventListener("click", () => {
-  navigateWithHistory("pdf-vocabulary");
-});
-
-document.getElementById("chooseVocabularyPdf").addEventListener("click", () => {
-  pdfMatchedWords = [];
-  document.getElementById("pdfReviewPanel").hidden = true;
-  document.getElementById("pdfReviewList").replaceChildren();
-  document.getElementById("pdfImportStatus").textContent =
-    "Opening the PDF picker…";
-
-  try {
-    PdfImportBridge.choosePdf();
-  } catch (error) {
-    document.getElementById("pdfImportStatus").textContent =
-      "Could not open the PDF picker. Please try again.";
-  }
 });
 
 document.getElementById("openAiVocabulary").addEventListener("click", () => {
@@ -1473,348 +1384,6 @@ document.getElementById("saveAiVocabulary")
     document.getElementById("aiVocabularyReview").hidden = true;
     aiVocabularyCandidates = [];
   });
-
-window.onNativePdfStatus = function(message) {
-  document.getElementById("pdfImportStatus").textContent =
-    String(message || "");
-};
-
-window.onNativePdfError = function(message) {
-  document.getElementById("pdfImportStatus").textContent =
-    "PDF import failed: " + String(message || "Unknown error");
-};
-
-window.onNativePdfMatches = function(rawJson, pageCount, tokenCount) {
-  const status = document.getElementById("pdfImportStatus");
-  const reviewPanel = document.getElementById("pdfReviewPanel");
-  const reviewList = document.getElementById("pdfReviewList");
-  const summary = document.getElementById("pdfReviewSummary");
-
-  let totalMatches = 0;
-
-  try {
-    pdfMatchedWords = JSON.parse(rawJson);
-    if (!Array.isArray(pdfMatchedWords)) {
-      throw new Error("Unexpected results format.");
-    }
-
-    totalMatches = pdfMatchedWords.length;
-    pdfMatchedWords = pdfMatchedWords.filter(item => {
-      const term = String(item && (item.term || item.word) || "")
-        .trim()
-        .toLocaleLowerCase();
-      return !term || !knownWords.includes(term);
-    });
-  } catch (error) {
-    pdfMatchedWords = [];
-    reviewPanel.hidden = true;
-    status.textContent = "Could not display the PDF matches.";
-    return;
-  }
-
-  const skippedKnown = totalMatches - pdfMatchedWords.length;
-
-  reviewList.replaceChildren();
-  reviewPanel.hidden = false;
-
-  status.textContent = "PDF text extraction and matching complete.";
-  document.getElementById("pdfReviewHeading").textContent =
-    "Review matched vocabulary";
-
-  summary.textContent =
-    "Read " + pageCount + " page" + (pageCount === 1 ? "" : "s") +
-    " and found " + tokenCount + " English word tokens. " +
-    pdfMatchedWords.length + " dictionary matches are available." +
-    (skippedKnown
-      ? " Skipped " + skippedKnown + " match" +
-        (skippedKnown === 1 ? "" : "es") + " marked as Known."
-      : "") +
-    " Uncheck anything you do not want to save.";
-
-  if (!pdfMatchedWords.length) {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = skippedKnown
-      ? "All dictionary matches in this PDF were already marked as Known."
-      : "No matching English vocabulary was found. Try a PDF with different text.";
-    reviewList.appendChild(empty);
-    return;
-  }
-
-  pdfMatchedWords.forEach((item, index) => {
-    const label = document.createElement("label");
-    label.className = "pdf-review-item";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = true;
-    checkbox.dataset.index = String(index);
-    checkbox.setAttribute(
-      "aria-label",
-      "Select " + String(item.term || item.word || "vocabulary")
-    );
-
-    const details = document.createElement("span");
-    details.className = "pdf-review-details";
-
-    const title = document.createElement("strong");
-    title.textContent = String(item.term || item.word || "Unknown term");
-    details.appendChild(title);
-
-    if (item.word && item.word !== item.term) {
-      const headword = document.createElement("span");
-      headword.textContent = " — " + String(item.word);
-      details.appendChild(headword);
-    }
-
-    if (item.definition) {
-      const definition = document.createElement("span");
-      definition.className = "muted pdf-review-definition";
-      definition.textContent = String(item.definition);
-      details.appendChild(definition);
-    }
-
-    if (Number(item.occurrences) > 1) {
-      const frequency = document.createElement("span");
-      frequency.className = "muted";
-      frequency.textContent =
-        "Found " + Number(item.occurrences) + " times";
-      details.appendChild(frequency);
-    }
-
-    label.append(checkbox, details);
-    reviewList.appendChild(label);
-  });
-};
-
-document.getElementById("pdfMarkKnown").addEventListener("click", () => {
-  const status = document.getElementById("pdfImportStatus");
-  const selectedCheckboxes = Array.from(
-    document.querySelectorAll("#pdfReviewList input[type='checkbox']:checked")
-  );
-
-  if (!selectedCheckboxes.length) {
-    status.textContent = "Select the familiar words you already know first.";
-    return;
-  }
-
-  const selectedItems = selectedCheckboxes
-    .map(checkbox => pdfMatchedWords[Number(checkbox.dataset.index)])
-    .filter(item => item && (item.term || item.word));
-
-  const termsToMark = [...new Set(
-    selectedItems
-      .map(item => String(item.term || item.word).trim().toLocaleLowerCase())
-      .filter(Boolean)
-  )];
-
-  if (!termsToMark.length) {
-    status.textContent = "No valid words were selected.";
-    return;
-  }
-
-  const previousKnownWords = knownWords.slice();
-  knownWords = [...new Set([...knownWords, ...termsToMark])];
-
-  if (!saveKnownWords()) {
-    knownWords = previousKnownWords;
-    return;
-  }
-
-  const marked = new Set(termsToMark);
-  pdfMatchedWords = pdfMatchedWords.filter(item => {
-    const term = String(item && (item.term || item.word) || "")
-      .trim()
-      .toLocaleLowerCase();
-    return !marked.has(term);
-  });
-
-  const reviewList = document.getElementById("pdfReviewList");
-  reviewList.replaceChildren();
-
-  if (!pdfMatchedWords.length) {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "No unfamiliar matches remain in this PDF.";
-    reviewList.appendChild(empty);
-  } else {
-    pdfMatchedWords.forEach((item, index) => {
-      const label = document.createElement("label");
-      label.className = "pdf-review-item";
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = true;
-      checkbox.dataset.index = String(index);
-      checkbox.setAttribute(
-        "aria-label",
-        "Select " + String(item.term || item.word || "vocabulary")
-      );
-
-      const details = document.createElement("span");
-      details.className = "pdf-review-details";
-
-      const title = document.createElement("strong");
-      title.textContent = String(item.term || item.word || "Unknown term");
-      details.appendChild(title);
-
-      if (item.word && item.word !== item.term) {
-        const headword = document.createElement("span");
-        headword.textContent = " — " + String(item.word);
-        details.appendChild(headword);
-      }
-
-      if (item.definition) {
-        const definition = document.createElement("span");
-        definition.className = "muted pdf-review-definition";
-        definition.textContent = String(item.definition);
-        details.appendChild(definition);
-      }
-
-      if (Number(item.occurrences) > 1) {
-        const frequency = document.createElement("span");
-        frequency.className = "muted";
-        frequency.textContent = "Found " + Number(item.occurrences) + " times";
-        details.appendChild(frequency);
-      }
-
-      label.append(checkbox, details);
-      reviewList.appendChild(label);
-    });
-  }
-
-  document.getElementById("pdfReviewSummary").textContent =
-    pdfMatchedWords.length +
-    " unfamiliar dictionary matches remain. Marked " +
-    termsToMark.length + " word" +
-    (termsToMark.length === 1 ? "" : "s") +
-    " as Known. They will be excluded from future PDF imports.";
-
-  status.textContent =
-    "Saved " + termsToMark.length + " Known Word" +
-    (termsToMark.length === 1 ? "." : "s.");
-});
-
-document.getElementById("pdfSelectAll").addEventListener("click", () => {
-  document.querySelectorAll(
-    "#pdfReviewList input[type='checkbox']"
-  ).forEach(checkbox => {
-    checkbox.checked = true;
-  });
-});
-
-document.getElementById("pdfSelectNone").addEventListener("click", () => {
-  document.querySelectorAll(
-    "#pdfReviewList input[type='checkbox']"
-  ).forEach(checkbox => {
-    checkbox.checked = false;
-  });
-});
-
-document.getElementById("cancelPdfVocabularyImport").addEventListener(
-  "click",
-  () => {
-    pdfMatchedWords = [];
-
-    document.getElementById("pdfCollectionName").value = "";
-    document.getElementById("pdfImportStatus").textContent = "";
-    document.getElementById("pdfReviewSummary").textContent = "";
-    document.getElementById("pdfReviewList").replaceChildren();
-    document.getElementById("pdfReviewPanel").hidden = true;
-
-    navigateWithHistory("collections");
-  }
-);
-
-document.getElementById("savePdfVocabularyCollection").addEventListener(
-  "click",
-  () => {
-    const nameInput = document.getElementById("pdfCollectionName");
-    const status = document.getElementById("pdfImportStatus");
-    const name = nameInput.value.trim();
-
-    if (!name) {
-      status.textContent =
-        "Enter a name for your vocabulary collection first.";
-      nameInput.focus();
-      return;
-    }
-
-    if (collections.some(collection =>
-      String(collection.name || "").toLocaleLowerCase() ===
-      name.toLocaleLowerCase()
-    )) {
-      status.textContent =
-        "A collection with that name already exists. Please choose another name.";
-      nameInput.focus();
-      return;
-    }
-
-    const selected = Array.from(
-      document.querySelectorAll(
-        "#pdfReviewList input[type='checkbox']:checked"
-      )
-    ).map(checkbox => pdfMatchedWords[Number(checkbox.dataset.index)])
-      .filter(item => item && (item.term || item.word));
-
-    if (!selected.length) {
-      status.textContent =
-        "Select at least one vocabulary item before saving.";
-      return;
-    }
-
-    const seen = new Set();
-    const words = [];
-
-    selected.forEach(item => {
-      const term = String(item.term || item.word).trim();
-      const key = "en-id|" + term.toLocaleLowerCase();
-
-      if (!term || seen.has(key)) return;
-      seen.add(key);
-
-      words.push({
-        term: term,
-        word: String(item.word || term),
-        definition: String(item.definition || ""),
-        direction: "en-id"
-      });
-    });
-
-    if (!words.length) {
-      status.textContent =
-        "There are no valid vocabulary items to save.";
-      return;
-    }
-
-    const collection = {
-      id: Date.now().toString(36) +
-        Math.random().toString(36).slice(2, 7),
-      name: name.slice(0, 80),
-      words: words
-    };
-
-    collections.push(collection);
-
-    if (!saveCollections()) {
-      collections.pop();
-      status.textContent =
-        "Could not save the collection. Please check available app storage.";
-      return;
-    }
-
-    renderCollections();
-    nameInput.value = "";
-    status.textContent =
-      "Saved " + words.length + " vocabulary item" +
-      (words.length === 1 ? "" : "s") +
-      " in “" + collection.name + "”.";
-    document.getElementById("pdfReviewPanel").hidden = true;
-    pdfMatchedWords = [];
-
-    navigateWithHistory("collections");
-  }
-);
 
 function showMessage(message) {
   results.replaceChildren();
