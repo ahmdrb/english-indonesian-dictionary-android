@@ -190,7 +190,7 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
     <section class="panel" id="aiVocabularyPanel">
       <button type="button" class="saved-screen-back" data-return-home>← Back to Dictionary</button>
       <h2>✦ Import AI Vocabulary</h2>
-      <p class="muted">Use an AI chatbot to find useful English words and phrases in a PDF, then review and save them to your offline vocabulary.</p>
+      <p class="muted">Use an AI chatbot to find useful individual English words and established idioms in a PDF, then review and save them to your offline vocabulary.</p>
 
       <h3>1. Generate vocabulary with AI</h3>
       <p class="muted">Copy the prompt below, attach your PDF in an AI chatbot, and ask it to return vocabulary as JSON.</p>
@@ -995,24 +995,28 @@ document.getElementById("backToCollections").addEventListener("click", () => {
 
 
 // AI Vocabulary Import: prompt, parser, preview, and saving handlers.
-const AI_VOCABULARY_PROMPT = `Read the attached PDF and identify useful English vocabulary that a learner may not already know.
+const AI_VOCABULARY_PROMPT = `Read the attached PDF and identify useful English vocabulary that a learner may not already know. Include ONLY these two categories:
 
-Prioritize:
-- Less-common but useful English words and phrases.
-- Academic, formal, literary, and topic-specific vocabulary.
-- Idioms, phrasal verbs, collocations, and expressions.
-- Important meanings determined by the PDF's context.
-- Words worth learning rather than extremely common basic words.
+1. Individual English words:
+- Useful less-common words.
+- Academic, formal, literary, and topic-specific words.
+- Words whose meanings are important in the PDF's context.
 
-Avoid names, obvious basic words, duplicates, and words that have no useful context. Do not claim certainty about what the learner already knows.
+2. Established English idioms:
+- Recognized idiomatic expressions whose meanings are not simply the literal meanings of their individual words.
+- Multiword idioms are allowed, such as "break the ice", "spill the beans", and "once in a blue moon".
+
+Do NOT include ordinary phrases, collocations, phrasal verbs unless they are also established idioms, sentences, example sentences, or groups of words that are not established idioms. Avoid names, obvious basic words, duplicates, and terms without useful context. Do not claim certainty about what the learner already knows.
 
 Return ONLY valid JSON, with no Markdown fences or commentary, using this format:
 [
-  {"term": "English word or phrase"},
-  {"term": "Another useful word or phrase"}
+  {"term": "resilient"},
+  {"term": "meticulous"},
+  {"term": "break the ice"},
+  {"term": "spill the beans"}
 ]
 
-Include only the English term or phrase. Do not include definitions, translations, notes, examples, or extra fields. Do not add explanations before or after the JSON.`;
+Each term must be either ONE individual English word or ONE established English idiom. Include only the English term. Do not include definitions, translations, notes, examples, or extra fields. Do not add explanations before or after the JSON.`;
 
 let aiVocabularyCandidates = [];
 
