@@ -1110,9 +1110,7 @@ function addBulkCheckbox(card, entry, scope, rerender) {
     "display:flex;align-items:center;justify-content:flex-end;" +
     "gap:8px;margin:0;cursor:pointer;flex-shrink:0;";
 
-  const text = document.createElement("span");
-  text.textContent = "Select";
-  text.style.cssText = "font-size:14px;font-weight:600;";
+
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
@@ -1128,7 +1126,7 @@ function addBulkCheckbox(card, entry, scope, rerender) {
     rerender();
   });
 
-  label.append(text, checkbox);
+  label.append(checkbox);
 
   const title = card.querySelector(".browse-word");
   if (!title) {
