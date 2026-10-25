@@ -1108,7 +1108,7 @@ function addBulkCheckbox(card, entry, scope, rerender) {
   label.className = "bulk-select-label";
   label.style.cssText =
     "display:flex;align-items:center;justify-content:flex-end;" +
-    "gap:8px;margin:0 0 10px auto;cursor:pointer;";
+    "gap:8px;margin:0;cursor:pointer;flex-shrink:0;";
 
   const text = document.createElement("span");
   text.textContent = "Select";
@@ -1129,7 +1129,23 @@ function addBulkCheckbox(card, entry, scope, rerender) {
   });
 
   label.append(text, checkbox);
-  card.insertBefore(label, card.firstChild);
+
+  const title = card.querySelector(".browse-word");
+  if (!title) {
+    throw new Error("Saved-word button was not found; refusing to continue.");
+  }
+
+  const row = document.createElement("div");
+  row.className = "saved-word-select-row";
+  row.style.cssText =
+    "display:flex;align-items:center;justify-content:space-between;" +
+    "gap:12px;width:100%;";
+
+  title.style.cssText +=
+    ";flex:1 1 auto;min-width:0;width:auto;margin-top:0;";
+
+  title.parentNode.insertBefore(row, title);
+  row.append(title, label);
 }
 
 function addBulkToolbar(list, entries, scope, rerender) {
