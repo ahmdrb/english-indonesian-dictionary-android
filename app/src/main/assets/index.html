@@ -995,6 +995,7 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
 
 
 const bulkSelections = new Map();
+const bulkSelectionModes = new Set();
 
 function getBulkSelection(scope) {
   if (!bulkSelections.has(scope)) {
@@ -1003,16 +1004,29 @@ function getBulkSelection(scope) {
   return bulkSelections.get(scope);
 }
 
+function isBulkSelectionMode(scope) {
+  return bulkSelectionModes.has(scope);
+}
+
 function addBulkCheckbox(card, entry, scope, rerender) {
+  if (!isBulkSelectionMode(scope)) return;
+
   const label = document.createElement("label");
   label.className = "bulk-select-label";
   label.style.cssText =
-    "display:flex;align-items:center;gap:9px;margin-bottom:10px;";
+    "display:flex;align-items:center;justify-content:flex-end;" +
+    "gap:8px;margin:0 0 10px auto;cursor:pointer;";
+
+  const text = document.createElement("span");
+  text.textContent = "Select";
+  text.style.cssText = "font-size:14px;font-weight:600;";
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = getBulkSelection(scope).has(entryKey(entry));
   checkbox.setAttribute("aria-label", "Select " + entry.term);
+  checkbox.style.cssText =
+    "width:20px;height:20px;margin:0;flex-shrink:0;";
 
   checkbox.addEventListener("change", () => {
     const selected = getBulkSelection(scope);
@@ -1021,24 +1035,30 @@ function addBulkCheckbox(card, entry, scope, rerender) {
     rerender();
   });
 
-  const text = document.createElement("span");
-  text.textContent = "Select word";
-
-  label.append(checkbox, text);
+  label.append(text, checkbox);
   card.insertBefore(label, card.firstChild);
 }
 
 function addBulkToolbar(list, entries, scope, rerender) {
-  const toolbar = document.createElement("div");
-  toolbar.className = "entry-actions";
-  toolbar.style.cssText =
-    "padding:10px 0;border-bottom:1px solid #e0e6ef;margin-bottom:10px;";
-
   const selected = getBulkSelection(scope);
   const availableKeys = new Set(entries.map(entryKey));
 
   for (const key of selected) {
     if (!availableKeys.has(key)) selected.delete(key);
+  }
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "entry-actions";
+  toolbar.style.cssText =
+    "padding:10px 0;border-bottom:1px solid #e0e6ef;margin-bottom:10px;";
+
+  if (!isBulkSelectionMode(scope)) {
+    toolbar.appendChild(makeAction("Select", "secondary-action", () => {
+      bulkSelectionModes.add(scope);
+      rerender();
+    }));
+    list.appendChild(toolbar);
+    return;
   }
 
   const status = document.createElement("p");
@@ -1072,6 +1092,12 @@ function addBulkToolbar(list, entries, scope, rerender) {
     moveBulkEntries(entries, scope, rerender);
   }));
 
+  toolbar.appendChild(makeAction("Done", "secondary-action", () => {
+    selected.clear();
+    bulkSelectionModes.delete(scope);
+    rerender();
+  }));
+
   list.appendChild(toolbar);
 }
 
@@ -1102,6 +1128,7 @@ function deleteBulkEntries(entries, scope, rerender) {
     }
 
     selected.clear();
+    bulkSelectionModes.delete(scope);
     rerender();
     renderCollections();
   } catch (_) {
@@ -1241,6 +1268,7 @@ function moveBulkEntries(entries, sourceScope, rerender) {
     }
 
     selected.clear();
+    bulkSelectionModes.delete(sourceScope);
     menu.remove();
     rerender();
     renderCollections();
