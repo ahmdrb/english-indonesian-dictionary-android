@@ -867,6 +867,7 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
       title.longPressHandled = false;
       return;
     }
+
     if (navigationContext && navigationContext.type === "favorites") {
       savedWordNavigation = {
         type: "favorites",
@@ -901,55 +902,148 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
     }
   }
 
-  function showRemovalDialog() {
+  function showWordOptions() {
     const overlay = document.createElement("div");
     overlay.style.cssText =
-      "position:fixed;inset:0;z-index:9999;" +
-      "background:rgba(0,0,0,.55);display:flex;" +
-      "align-items:center;justify-content:center;padding:20px;";
+      "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);" +
+      "display:flex;align-items:center;justify-content:center;padding:20px;";
 
     const dialog = document.createElement("section");
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
-    dialog.setAttribute("aria-labelledby", "savedRemovalTitle");
+    dialog.setAttribute("aria-label", "Saved word options");
     dialog.style.cssText =
       "box-sizing:border-box;width:100%;max-width:380px;" +
-      "background:white;color:#24334b;border-radius:16px;" +
-      "padding:22px;box-shadow:0 8px 32px rgba(0,0,0,.25);";
+      "background:var(--panel,#fff);color:var(--text,#24334b);" +
+      "border-radius:16px;padding:22px;";
 
     const heading = document.createElement("h3");
-    heading.id = "savedRemovalTitle";
-    heading.textContent = "Remove saved word?";
+    heading.textContent = "Saved word options";
     heading.style.marginTop = "0";
 
     const message = document.createElement("p");
     message.style.cssText = "line-height:1.6;overflow-wrap:anywhere;";
-    message.textContent = "Remove “" + entry.term + "” " +
-      (removeLabel === "Remove favorite"
-        ? "from Favorites?"
-        : "from this collection?") +
-      " The dictionary entry itself will not be deleted.";
+    message.textContent = "“" + entry.term + "”";
 
     const actions = document.createElement("div");
     actions.style.cssText =
-      "display:flex;gap:10px;margin-top:20px;";
+      "display:flex;flex-direction:column;gap:10px;margin-top:18px;";
 
     const cancelButton = makeAction("Cancel", "secondary-action", () => {
       overlay.remove();
     });
-    cancelButton.style.flex = "1";
+
+    const renameButton = makeAction("Rename", "secondary-action", () => {
+      overlay.remove();
+
+      const next = prompt("Rename saved word:", entry.term);
+      if (next === null) return;
+
+      const name = next.trim();
+      if (!name) {
+        alert("Word cannot be empty.");
+        return;
+      }
+
+      if (name.length > 200) {
+        alert("Word must be 200 characters or fewer.");
+        return;
+      }
+
+      const list = navigationContext &&
+        navigationContext.type === "favorites"
+        ? favorites
+        : navigationContext &&
+          navigationContext.type === "collection"
+          ? (collections.find(c =>
+              c.id === navigationContext.collectionId)?.words || [])
+          : null;
+
+      if (!list) {
+        alert("Could not find the original saved list.");
+        return;
+      }
+
+      const oldKey = entryKey(entry);
+      const newKey = entryKey({ ...entry, term: name });
+
+      if (list.some(item => item !== entry && entryKey(item) === newKey)) {
+        alert("That word already exists in this list.");
+        return;
+      }
+
+      const oldTerm = entry.term;
+      const oldWord = entry.word;
+      const oldRaw = localStorage.getItem(
+        navigationContext.type === "favorites"
+          ? FAVORITES_KEY : COLLECTIONS_KEY
+      );
+
+      entry.term = name;
+      entry.word = name;
+
+      let saved = false;
+      try {
+        const storageKey = navigationContext.type === "favorites"
+          ? FAVORITES_KEY : COLLECTIONS_KEY;
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify(
+            navigationContext.type === "favorites" ? favorites : collections
+          )
+        );
+        saved = true;
+      } catch (_) {
+        entry.term = oldTerm;
+        entry.word = oldWord;
+
+        try {
+          const storageKey = navigationContext.type === "favorites"
+            ? FAVORITES_KEY : COLLECTIONS_KEY;
+          if (oldRaw === null) localStorage.removeItem(storageKey);
+          else localStorage.setItem(storageKey, oldRaw);
+        } catch (_) {}
+
+        alert("Could not save the renamed word. Your original word was restored where storage allowed.");
+      }
+
+      if (!saved) return;
+
+      const scope = navigationContext.type === "favorites"
+        ? "favorites"
+        : "collection:" + navigationContext.collectionId;
+      const selection = getBulkSelection(scope);
+      if (selection.has(oldKey)) {
+        selection.delete(oldKey);
+        selection.add(newKey);
+      }
+
+      if (savedWordNavigation &&
+          savedWordNavigation.type === navigationContext.type &&
+          (navigationContext.type !== "collection" ||
+           savedWordNavigation.collectionId === navigationContext.collectionId) &&
+          savedWordNavigation.currentKey === oldKey) {
+        savedWordNavigation.currentKey = newKey;
+      }
+
+      if (navigationContext.type === "favorites") renderFavorites();
+      else renderCollectionDetail();
+
+      renderCollections();
+      updateSavedWordNavigation();
+    });
 
     const removeButton = makeAction("Remove", "remove-action", () => {
       overlay.remove();
       onRemove();
     });
-    removeButton.style.flex = "1";
 
-    actions.appendChild(cancelButton);
-    actions.appendChild(removeButton);
-    dialog.appendChild(heading);
-    dialog.appendChild(message);
-    dialog.appendChild(actions);
+    [renameButton, removeButton, cancelButton].forEach(button => {
+      button.style.width = "100%";
+      actions.appendChild(button);
+    });
+
+    dialog.append(heading, message, actions);
     overlay.appendChild(dialog);
 
     overlay.addEventListener("click", event => {
@@ -960,12 +1054,12 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
     cancelButton.focus();
   }
 
-  function triggerRemoval() {
+  function triggerOptions() {
     if (longPressTriggered) return;
 
     longPressTriggered = true;
     title.longPressHandled = true;
-    showRemovalDialog();
+    showWordOptions();
   }
 
   title.addEventListener("pointerdown", event => {
@@ -976,7 +1070,7 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
 
     pressTimer = setTimeout(() => {
       pressTimer = null;
-      triggerRemoval();
+      triggerOptions();
     }, 600);
   });
 
@@ -986,13 +1080,12 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
   title.addEventListener("contextmenu", event => {
     event.preventDefault();
     cancelPress();
-    triggerRemoval();
+    triggerOptions();
   });
 
   card.appendChild(title);
   return card;
 }
-
 
 const bulkSelections = new Map();
 const bulkSelectionModes = new Set();
