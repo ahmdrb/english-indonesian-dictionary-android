@@ -239,6 +239,7 @@ body[data-page="ai-vocabulary"] #aiVocabularyPanel {
       <button type="button" class="saved-screen-back" id="backToCollections">← Back to Collections</button>
       <h2 id="collectionDetailTitle">Collection</h2>
       <p id="collectionDetailCount" class="muted"></p>
+      <div id="collectionDetailActions" class="entry-actions"></div>
       <div id="collectionWords"></div>
     </section>
   </div>
@@ -992,9 +993,272 @@ function renderSavedWord(entry, onRemove, removeLabel, navigationContext) {
   return card;
 }
 
+
+const bulkSelections = new Map();
+
+function getBulkSelection(scope) {
+  if (!bulkSelections.has(scope)) {
+    bulkSelections.set(scope, new Set());
+  }
+  return bulkSelections.get(scope);
+}
+
+function addBulkCheckbox(card, entry, scope, rerender) {
+  const label = document.createElement("label");
+  label.className = "bulk-select-label";
+  label.style.cssText =
+    "display:flex;align-items:center;gap:9px;margin-bottom:10px;";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = getBulkSelection(scope).has(entryKey(entry));
+  checkbox.setAttribute("aria-label", "Select " + entry.term);
+
+  checkbox.addEventListener("change", () => {
+    const selected = getBulkSelection(scope);
+    if (checkbox.checked) selected.add(entryKey(entry));
+    else selected.delete(entryKey(entry));
+    rerender();
+  });
+
+  const text = document.createElement("span");
+  text.textContent = "Select word";
+
+  label.append(checkbox, text);
+  card.insertBefore(label, card.firstChild);
+}
+
+function addBulkToolbar(list, entries, scope, rerender) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "entry-actions";
+  toolbar.style.cssText =
+    "padding:10px 0;border-bottom:1px solid #e0e6ef;margin-bottom:10px;";
+
+  const selected = getBulkSelection(scope);
+  const availableKeys = new Set(entries.map(entryKey));
+
+  for (const key of selected) {
+    if (!availableKeys.has(key)) selected.delete(key);
+  }
+
+  const status = document.createElement("p");
+  status.className = "muted";
+  status.textContent = selected.size + " selected";
+  toolbar.appendChild(status);
+
+  toolbar.appendChild(makeAction("Select all", "secondary-action", () => {
+    entries.forEach(entry => selected.add(entryKey(entry)));
+    rerender();
+  }));
+
+  toolbar.appendChild(makeAction("Clear selection", "secondary-action", () => {
+    selected.clear();
+    rerender();
+  }));
+
+  toolbar.appendChild(makeAction("Delete selected", "remove-action", () => {
+    if (!selected.size) {
+      alert("Select at least one word first.");
+      return;
+    }
+    deleteBulkEntries(entries, scope, rerender);
+  }));
+
+  toolbar.appendChild(makeAction("Move selected", "secondary-action", () => {
+    if (!selected.size) {
+      alert("Select at least one word first.");
+      return;
+    }
+    moveBulkEntries(entries, scope, rerender);
+  }));
+
+  list.appendChild(toolbar);
+}
+
+function deleteBulkEntries(entries, scope, rerender) {
+  const selected = getBulkSelection(scope);
+  const chosen = entries.filter(entry => selected.has(entryKey(entry)));
+
+  if (!chosen.length) return;
+  if (!confirm("Delete " + chosen.length + " selected word(s)?")) return;
+
+  const remaining = entries.filter(entry => !selected.has(entryKey(entry)));
+  try {
+    if (scope === "favorites") {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(remaining));
+      favorites = remaining;
+    } else {
+      const collectionId = scope.slice("collection:".length);
+      const collection = collections.find(c => c.id === collectionId);
+      if (!collection) return;
+      const oldWords = collection.words;
+      collection.words = remaining;
+      try {
+        localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+      } catch (error) {
+        collection.words = oldWords;
+        throw error;
+      }
+    }
+
+    selected.clear();
+    rerender();
+    renderCollections();
+  } catch (_) {
+    alert("Could not save changes. Your words have been kept.");
+  }
+}
+
+function moveBulkEntries(entries, sourceScope, rerender) {
+  const selected = getBulkSelection(sourceScope);
+  const chosen = entries.filter(entry => selected.has(entryKey(entry)));
+  if (!chosen.length) return;
+
+  const destinations = collections.filter(collection =>
+    sourceScope !== "collection:" + collection.id
+  );
+
+  if (!destinations.length) {
+    alert("Create a collection first to move words into it.");
+    return;
+  }
+
+  const menu = document.createElement("div");
+  menu.style.cssText =
+    "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);" +
+    "display:flex;align-items:center;justify-content:center;padding:20px;";
+
+  const dialog = document.createElement("section");
+  dialog.style.cssText =
+    "background:white;color:#24334b;padding:20px;border-radius:14px;" +
+    "width:100%;max-width:380px;max-height:80vh;overflow:auto;";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Move " + chosen.length + " selected word(s)";
+  dialog.appendChild(heading);
+
+  const select = document.createElement("select");
+  select.style.cssText = "width:100%;padding:12px;margin:10px 0;";
+  destinations.forEach(collection => {
+    const option = document.createElement("option");
+    option.value = collection.id;
+    option.textContent = collection.name;
+    select.appendChild(option);
+  });
+  dialog.appendChild(select);
+
+  const actions = document.createElement("div");
+  actions.className = "entry-actions";
+  actions.appendChild(makeAction("Cancel", "secondary-action", () => menu.remove()));
+
+  actions.appendChild(makeAction("Move words", "", () => {
+    const destination = collections.find(c => c.id === select.value);
+    if (!destination) {
+      alert("Please select a valid destination.");
+      return;
+    }
+
+    const sourceCollection = sourceScope.startsWith("collection:")
+      ? collections.find(c => c.id === sourceScope.slice("collection:".length))
+      : null;
+
+    if (sourceScope.startsWith("collection:") &&
+        (!sourceCollection || sourceCollection.id === destination.id)) {
+      alert("Please select a different destination collection.");
+      return;
+    }
+
+    if (!Array.isArray(destination.words)) destination.words = [];
+    if (sourceCollection && !Array.isArray(sourceCollection.words)) {
+      sourceCollection.words = [];
+    }
+
+    const destinationKeys = new Set(destination.words.map(entryKey));
+    const moving = chosen.filter(entry => !destinationKeys.has(entryKey(entry)));
+
+    if (!moving.length) {
+      alert("All selected words already exist in that collection.");
+      return;
+    }
+
+    const oldFavoritesRaw = localStorage.getItem(FAVORITES_KEY);
+    const oldCollectionsRaw = localStorage.getItem(COLLECTIONS_KEY);
+    const oldFavorites = favorites;
+    const oldCollections = collections;
+    const movingKeys = new Set(moving.map(entryKey));
+
+    try {
+      const nextCollections = JSON.parse(JSON.stringify(collections));
+      const nextFavorites = sourceScope === "favorites"
+        ? favorites.filter(entry => !movingKeys.has(entryKey(entry)))
+        : favorites;
+
+      const nextDestination = nextCollections.find(c => c.id === destination.id);
+      if (!nextDestination) throw new Error("Destination no longer exists.");
+
+      if (!Array.isArray(nextDestination.words)) nextDestination.words = [];
+      const nextDestinationKeys = new Set(nextDestination.words.map(entryKey));
+      nextDestination.words.push(
+        ...moving.filter(entry => !nextDestinationKeys.has(entryKey(entry)))
+      );
+
+      if (sourceCollection) {
+        const nextSource = nextCollections.find(c => c.id === sourceCollection.id);
+        if (!nextSource) throw new Error("Source collection no longer exists.");
+        nextSource.words = (nextSource.words || []).filter(
+          entry => !movingKeys.has(entryKey(entry))
+        );
+      }
+
+      // Persist the combined collection changes before committing in-memory state.
+      localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(nextCollections));
+      if (sourceScope === "favorites") {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(nextFavorites));
+      }
+
+      collections = nextCollections;
+      if (sourceScope === "favorites") favorites = nextFavorites;
+    } catch (_) {
+      // Best-effort rollback of both storage keys and in-memory state.
+      favorites = oldFavorites;
+      collections = oldCollections;
+
+      try {
+        if (oldCollectionsRaw === null) localStorage.removeItem(COLLECTIONS_KEY);
+        else localStorage.setItem(COLLECTIONS_KEY, oldCollectionsRaw);
+      } catch (_) {}
+
+      try {
+        if (oldFavoritesRaw === null) localStorage.removeItem(FAVORITES_KEY);
+        else localStorage.setItem(FAVORITES_KEY, oldFavoritesRaw);
+      } catch (_) {}
+
+      alert("Could not save the move. The original data was restored where storage allowed.");
+      menu.remove();
+      rerender();
+      renderCollections();
+      return;
+    }
+
+    selected.clear();
+    menu.remove();
+    rerender();
+    renderCollections();
+  }));
+
+  dialog.appendChild(actions);
+  menu.appendChild(dialog);
+  menu.addEventListener("click", event => {
+    if (event.target === menu) menu.remove();
+  });
+  document.body.appendChild(menu);
+}
+
 function renderFavorites() {
   const list = document.getElementById("favoritesList");
   list.replaceChildren();
+
+  addBulkToolbar(list, favorites, "favorites", renderFavorites);
 
   if (!favorites.length) {
     const empty = document.createElement("p");
@@ -1011,11 +1275,15 @@ function renderFavorites() {
   list.appendChild(count);
 
   favorites.forEach((entry, index) => {
-    list.appendChild(renderSavedWord(entry, () => {
+    const card = renderSavedWord(entry, () => {
       favorites.splice(index, 1);
       saveFavorites();
+      getBulkSelection("favorites").delete(entryKey(entry));
       renderFavorites();
-    }, "Remove favorite", { type: "favorites" }));
+    }, "Remove favorite", { type: "favorites" });
+
+    addBulkCheckbox(card, entry, "favorites", renderFavorites);
+    list.appendChild(card);
   });
 }
 
@@ -1108,6 +1376,261 @@ function openCollection(id) {
   navigateTo("collection-detail");
 }
 
+function openAddWordsDialog() {
+  const collection = collections.find(c => c.id === activeCollectionId);
+  if (!collection) {
+    alert("Please open a collection first.");
+    return;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:9999;background:#0008;" +
+    "display:flex;align-items:center;justify-content:center;padding:16px;";
+
+  const dialog = document.createElement("section");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "Add words to collection");
+  dialog.style.cssText =
+    "background:white;color:#182235;width:100%;max-width:520px;" +
+    "max-height:85vh;overflow:auto;padding:18px;border-radius:16px;";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Add Words";
+  dialog.appendChild(heading);
+
+  const description = document.createElement("p");
+  description.className = "muted";
+  description.textContent = "Search the dictionary, select words, then add them to “" +
+    collection.name + "”.";
+  dialog.appendChild(description);
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Search words...";
+  search.autocomplete = "off";
+  search.style.cssText =
+    "box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd4e2;" +
+    "border-radius:10px;font:inherit;";
+  dialog.appendChild(search);
+
+  const directionSelect = document.createElement("select");
+  directionSelect.style.cssText =
+    "box-sizing:border-box;width:100%;padding:10px;margin-top:8px;" +
+    "border:1px solid #cbd4e2;border-radius:10px;font:inherit;";
+  [
+    ["en-id", "English → Indonesian"],
+    ["id-en", "Indonesian → English"]
+  ].forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    directionSelect.appendChild(option);
+  });
+  directionSelect.value = direction.value;
+  dialog.appendChild(directionSelect);
+
+  const status = document.createElement("p");
+  status.className = "muted";
+  status.textContent = "Enter at least 2 characters to search.";
+  dialog.appendChild(status);
+
+  const resultsBox = document.createElement("div");
+  resultsBox.style.cssText = "max-height:42vh;overflow:auto;margin-top:8px;";
+  dialog.appendChild(resultsBox);
+
+  const selected = new Map();
+  let requestNumber = 0;
+  let searchTimer = null;
+
+  function renderResults(entries) {
+    resultsBox.replaceChildren();
+
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No matching words found.";
+      resultsBox.appendChild(empty);
+      return;
+    }
+
+    for (const entry of entries) {
+      const item = currentEntry(entry);
+      if (!item.term) continue;
+
+      const key = entryKey(item);
+      const row = document.createElement("label");
+      row.style.cssText =
+        "display:flex;gap:10px;align-items:flex-start;padding:10px 2px;" +
+        "border-bottom:1px solid #e0e6ef;";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = selected.has(key);
+      checkbox.style.marginTop = "4px";
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selected.set(key, item);
+        else selected.delete(key);
+        status.textContent = selected.size + " word(s) selected.";
+      });
+
+      const text = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = item.term;
+      text.appendChild(title);
+
+      const definitionText = String(item.definition || "").replace(/<[^>]*>/g, " ");
+      if (definitionText.trim()) {
+        const detail = document.createElement("div");
+        detail.className = "muted";
+        detail.textContent = definitionText.trim().slice(0, 180);
+        text.appendChild(detail);
+      }
+
+      row.append(checkbox, text);
+      resultsBox.appendChild(row);
+    }
+
+    status.textContent = entries.length + " result(s) · " +
+      selected.size + " selected.";
+  }
+
+  async function performSearch() {
+    const request = ++requestNumber;
+    const term = search.value.trim();
+
+    if (term.length < 2) {
+      resultsBox.replaceChildren();
+      status.textContent = "Enter at least 2 characters to search.";
+      return;
+    }
+
+    status.textContent = "Searching...";
+    resultsBox.replaceChildren();
+
+    try {
+      let matches = [];
+      if (typeof window.DictionaryDB !== "undefined" &&
+          typeof window.DictionaryDB.search === "function") {
+        const response = window.DictionaryDB.search(directionSelect.value, term);
+        matches = JSON.parse(response);
+        if (!Array.isArray(matches)) matches = [];
+      }
+
+      const normalized = term.toLocaleLowerCase();
+      const personalMatches = personalEntries
+        .filter(entry => entry.direction === directionSelect.value)
+        .filter(entry => String(entry.term || "").toLocaleLowerCase().includes(normalized))
+        .map(entry => ({
+          ...entry,
+          term: String(entry.term || ""),
+          word: String(entry.word || entry.term || ""),
+          definition: String(entry.definition || ""),
+          isCustom: true
+        }));
+
+      const combined = [...personalMatches, ...matches];
+      const seen = new Set();
+      const unique = combined.filter(entry => {
+        const key = entryKey({ ...entry, direction: directionSelect.value });
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 60);
+
+      if (request !== requestNumber || !overlay.isConnected) return;
+      renderResults(unique);
+
+      if (!unique.length) {
+        status.textContent = typeof window.DictionaryDB === "undefined"
+          ? "No matching personal entries. The built-in dictionary is not ready."
+          : "No matching words found.";
+      }
+    } catch (_) {
+      if (request !== requestNumber || !overlay.isConnected) return;
+      resultsBox.replaceChildren();
+      status.textContent = "Search failed. Please try another word.";
+    }
+  }
+
+  search.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(performSearch, 250);
+  });
+  directionSelect.addEventListener("change", performSearch);
+
+  const actions = document.createElement("div");
+  actions.className = "entry-actions";
+  actions.style.position = "sticky";
+  actions.style.bottom = "0";
+  actions.style.background = "white";
+  actions.style.paddingTop = "10px";
+
+  actions.appendChild(makeAction("Cancel", "secondary-action", () => overlay.remove()));
+
+  actions.appendChild(makeAction("Add Selected", "", () => {
+    const current = collections.find(c => c.id === activeCollectionId);
+    if (!current) {
+      alert("This collection no longer exists.");
+      overlay.remove();
+      return;
+    }
+
+    if (!Array.isArray(current.words)) current.words = [];
+    if (!selected.size) {
+      alert("Select at least one word first.");
+      return;
+    }
+
+    const existing = new Set(current.words.map(entryKey));
+    const additions = [...selected.values()]
+      .map(currentEntry)
+      .filter(entry => entry.term && !existing.has(entryKey(entry)));
+
+    if (!additions.length) {
+      alert("All selected words already exist in this collection.");
+      return;
+    }
+
+    const previousWords = current.words;
+    const previousRaw = localStorage.getItem(COLLECTIONS_KEY);
+
+    try {
+      current.words = previousWords.concat(additions);
+      localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+    } catch (_) {
+      current.words = previousWords;
+      try {
+        if (previousRaw === null) localStorage.removeItem(COLLECTIONS_KEY);
+        else localStorage.setItem(COLLECTIONS_KEY, previousRaw);
+      } catch (_) {}
+      alert("Could not save the selected words. Your collection was restored where storage allowed.");
+      return;
+    }
+
+    overlay.remove();
+    renderCollectionDetail();
+    renderCollections();
+    alert("Added " + additions.length + " word(s). " +
+      (selected.size - additions.length) + " duplicate(s) skipped.");
+  }));
+
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+  overlay.addEventListener("click", event => {
+    if (event.target === overlay) overlay.remove();
+  });
+  document.addEventListener("keydown", function closeAddWordsOnEscape(event) {
+    if (event.key === "Escape" && overlay.isConnected) overlay.remove();
+    if (!overlay.isConnected) {
+      document.removeEventListener("keydown", closeAddWordsOnEscape);
+    }
+  });
+  document.body.appendChild(overlay);
+  search.focus();
+}
+
 function renderCollectionDetail() {
   const collection = collections.find(c => c.id === activeCollectionId);
 
@@ -1122,12 +1645,53 @@ function renderCollectionDetail() {
   document.getElementById("collectionDetailTitle").textContent =
     collection.name;
 
+  const detailActions = document.getElementById("collectionDetailActions");
+  detailActions.replaceChildren();
+  detailActions.appendChild(makeAction("＋ Add Words", "secondary-action",
+    openAddWordsDialog));
+  detailActions.appendChild(makeAction("✏️ Rename", "secondary-action", () => {
+    const next = prompt("Rename collection:", collection.name);
+    if (next === null) return;
+
+    const name = next.trim();
+    if (!name) {
+      alert("Collection title cannot be empty.");
+      return;
+    }
+
+    if (collections.some(c => c.id !== collection.id &&
+        c.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      alert("A collection with that title already exists.");
+      return;
+    }
+
+    const oldName = collection.name;
+    const oldRaw = localStorage.getItem(COLLECTIONS_KEY);
+    collection.name = name.slice(0, 80);
+
+    if (!saveCollections()) {
+      collection.name = oldName;
+      try {
+        if (oldRaw === null) localStorage.removeItem(COLLECTIONS_KEY);
+        else localStorage.setItem(COLLECTIONS_KEY, oldRaw);
+      } catch (_) {}
+      renderCollectionDetail();
+      return;
+    }
+
+    renderCollections();
+    renderCollectionDetail();
+  }));
+
   document.getElementById("collectionDetailCount").textContent =
     collection.words.length + " word" +
     (collection.words.length === 1 ? "" : "s");
 
   const list = document.getElementById("collectionWords");
   list.replaceChildren();
+
+  const scope = "collection:" + collection.id;
+  addBulkToolbar(list, collection.words, scope, renderCollectionDetail);
 
   if (!collection.words.length) {
     const empty = document.createElement("p");
@@ -1139,15 +1703,19 @@ function renderCollectionDetail() {
   }
 
   collection.words.forEach((entry, index) => {
-    list.appendChild(renderSavedWord(entry, () => {
+    const card = renderSavedWord(entry, () => {
       collection.words.splice(index, 1);
       saveCollections();
+      getBulkSelection(scope).delete(entryKey(entry));
       renderCollectionDetail();
       renderCollections();
     }, "Remove from collection", {
       type: "collection",
       collectionId: collection.id
-    }));
+    });
+
+    addBulkCheckbox(card, entry, scope, renderCollectionDetail);
+    list.appendChild(card);
   });
 }
 
