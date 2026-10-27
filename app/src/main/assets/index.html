@@ -32,6 +32,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .word { font-size: 1.2rem; font-weight: 750; overflow-wrap: anywhere; }
 .translation { font-size: 1.05rem; margin-top: 5px; }
 .pos { color: #596579; font-size: .85rem; margin-top: 5px; }
+.part-of-speech { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 4px; }
+.pos-badge { display: inline-block; border: 1px solid #c9d8f7; background: #edf3ff; color: #21478c; border-radius: 999px; padding: 4px 9px; font-size: .78rem; font-weight: 650; line-height: 1.35; }
+.pos-note { color: #687386; font-size: .8rem; margin: 5px 0; }
 footer { margin-top: 22px; color: #687386; font-size: .85rem; }
 .alphabet-buttons { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
 .alphabet-button { padding: 10px 0; background: #f0f4fb; color: #24334b; border: 1px solid #dfe6f1; }
@@ -2603,6 +2606,103 @@ function safeDefinition(html) {
   return output;
 }
 
+function partOfSpeechLabels(definitionHtml, term, isCustom) {
+  if (isCustom) {
+    return [{ label: "Part of speech not specified", note: "Custom vocabulary has no grammatical metadata." }];
+  }
+
+  const parsed = new DOMParser().parseFromString(String(definitionHtml || ""), "text/html");
+  const abbreviations = {
+    "n.": "Noun",
+    "prop. n.": "Proper noun",
+    "v.": "Verb",
+    "vb.": "Verb",
+    "adj.": "Adjective",
+    "adv.": "Adverb",
+    "pron.": "Pronoun",
+    "prep.": "Preposition",
+    "conj.": "Conjunction",
+    "interj.": "Interjection",
+    "det.": "Determiner",
+    "art.": "Article",
+    "num.": "Numeral",
+    "aux.": "Auxiliary verb",
+    "modal v.": "Modal verb",
+    "phr.": "Phrase",
+    "phrase.": "Phrase",
+    "pref.": "Prefix",
+    "suff.": "Suffix",
+    "suf.": "Suffix",
+    "part.": "Particle",
+    "abbr.": "Abbreviation"
+  };
+  const found = new Map();
+  const posNodes = [...parsed.querySelectorAll("i, em")];
+  for (const node of posNodes) {
+    const abbreviation = node.textContent.trim().toLowerCase().replace(/\s+/g, " ");
+    const category = abbreviations[abbreviation];
+    if (!category) continue;
+
+    const context = (node.parentElement?.textContent || "").toLowerCase();
+    const qualifiers = [];
+    if (category === "Noun") {
+      if (/\b(countable|count noun)\b/.test(context)) qualifiers.push("countable noun");
+      if (/\b(uncountable|mass noun|noncount)\b/.test(context)) qualifiers.push("uncountable noun");
+      if (/\b(collective noun)\b/.test(context)) qualifiers.push("collective noun");
+      if (/\b(proper noun)\b/.test(context)) qualifiers.push("proper noun");
+      if (/\b(abstract noun)\b/.test(context)) qualifiers.push("abstract noun");
+      if (/\b(concrete noun)\b/.test(context)) qualifiers.push("concrete noun");
+      if (!qualifiers.length) qualifiers.push("noun; subtype not specified");
+    } else if (category === "Verb") {
+      if (/\b(transitive)\b/.test(context)) qualifiers.push("transitive verb");
+      if (/\b(intransitive)\b/.test(context)) qualifiers.push("intransitive verb");
+      if (/\b(phrasal verb)\b/.test(context)) qualifiers.push("phrasal verb");
+      if (/\b(auxiliary verb)\b/.test(context)) qualifiers.push("auxiliary verb");
+      if (/\b(modal verb)\b/.test(context)) qualifiers.push("modal verb");
+      if (!qualifiers.length) qualifiers.push("verb; transitivity not specified");
+    } else if (category === "Adjective") {
+      if (/\b(comparative)\b/.test(context)) qualifiers.push("comparative adjective");
+      if (/\b(superlative)\b/.test(context)) qualifiers.push("superlative adjective");
+      if (!qualifiers.length) qualifiers.push("adjective; subtype not specified");
+    } else if (category === "Adverb") {
+      if (/\b(adverb of manner)\b/.test(context)) qualifiers.push("adverb of manner");
+      if (/\b(adverb of frequency)\b/.test(context)) qualifiers.push("adverb of frequency");
+      if (/\b(adverb of time)\b/.test(context)) qualifiers.push("adverb of time");
+      if (/\b(adverb of place)\b/.test(context)) qualifiers.push("adverb of place");
+      if (/\b(adverb of degree)\b/.test(context)) qualifiers.push("adverb of degree");
+      if (!qualifiers.length) qualifiers.push("adverb; subtype not specified");
+    } else {
+      qualifiers.push(category.toLowerCase());
+    }
+
+    const label = [...new Set(qualifiers)].join(" / ");
+    if (!found.has(category)) found.set(category, new Set());
+    found.get(category).add(label);
+  }
+
+  if (!found.size) {
+    return [{ label: "Part of speech unavailable", note: "The source entry does not provide a recognized grammatical label." }];
+  }
+  return [...found.entries()].map(([category, subtypes]) => ({
+    label: [...subtypes].join("; "),
+    note: category
+  }));
+}
+
+function appendPartOfSpeechBadges(card, entry) {
+  const labels = partOfSpeechLabels(entry.definition, entry.term, Boolean(entry.isCustom));
+  const wrapper = document.createElement("div");
+  wrapper.className = "part-of-speech";
+  for (const item of labels) {
+    const badge = document.createElement("span");
+    badge.className = "pos-badge";
+    badge.textContent = item.label;
+    badge.title = item.note || item.label;
+    wrapper.appendChild(badge);
+  }
+  card.appendChild(wrapper);
+}
+
 function renderSearch(exactOnly = false) {
   const term = query.value.trim();
   if (!term) {
@@ -2681,6 +2781,7 @@ function renderSearch(exactOnly = false) {
       word.className = "word";
       word.textContent = entry.term;
       card.appendChild(word);
+      appendPartOfSpeechBadges(card, entry);
 
       if (entry.isCustom) {
         const badge = document.createElement("div");
