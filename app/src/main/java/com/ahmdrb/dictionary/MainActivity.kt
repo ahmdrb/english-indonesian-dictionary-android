@@ -98,7 +98,7 @@ class MainActivity : Activity() {
                     val tempFile = File(filesDir, "dictionary.db.tmp")
                     tempFile.delete()
 
-                    GZIPInputStream(assets.open("dictionary.db.gz")).use { input ->
+                    assets.open("dictionary.db").use { input ->
                         FileOutputStream(tempFile).use { output ->
                             input.copyTo(output)
                             output.fd.sync()
