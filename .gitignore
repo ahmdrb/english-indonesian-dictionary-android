@@ -1,0 +1,22 @@
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# Generated dictionary data and temporary source archives
+data/raw/
+data/tmp/
+*.sqlite-wal
+*.sqlite-shm
+
+# Local dictionary source archives and generated database
+dictionary-source/
+app/src/main/assets/dictionary.db
+app/src/main/assets/dictionary.db-journal
+app/src/main/assets/dictionary.db.gz-journal
+app/src/main/assets/index.html.before-*
+app/build.gradle.kts.backup
+.dictionary-check.js

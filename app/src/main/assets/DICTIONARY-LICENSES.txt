@@ -1,0 +1,117 @@
+English ↔ Indonesian offline dictionary data
+
+Dictionary data is redistributed with its original license and attribution notices.
+The dictionary compilations are licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0), with additional source-specific terms.
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Source project: https://github.com/DanielGregorini/koreader-dicts
+
+
+====================================================================
+EN-ID ORIGINAL README
+====================================================================
+English to Indonesian
+=====================
+
+151979 entries, 323285 inflected forms.
+Built 2026-09-21 by koreader-dicts.
+Licence: CC-BY-SA-4.0. See LICENSE and ATTRIBUTION.
+
+Installation (KOReader)
+-----------------------
+
+Copy the folder containing the .ifo / .idx / .dict.dz / .syn files into
+
+    koreader/data/dict/
+
+on your device, so that you end up with
+
+    koreader/data/dict/en-id/en-id.ifo
+
+Restart KOReader. The dictionary appears in the dictionary list; if several are
+installed, long-press the dictionary name in a lookup popup to reorder them.
+
+Not affiliated with the KOReader project.
+
+
+EN-ID ORIGINAL ATTRIBUTION
+This dictionary is distributed under Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
+https://creativecommons.org/licenses/by-sa/4.0/
+
+It is built from the following sources:
+
+  * omw-id: Wordnet Bahasa (Indonesian), via Open Multilingual Wordnet 1.4
+  * pwn30: Princeton University WordNet 3.0
+  * wikt-en-id: English Wiktionary via kaikki.org (wiktextract)
+
+-- WordNet 3.0 License (Princeton University) --
+WordNet Release 3.0 Copyright 2006 by Princeton University. All rights reserved. This copyright notice must be retained on all copies, including modified copies. The name of Princeton University or Princeton may not be used in advertising or publicity pertaining to distribution of the software and/or database without specific, written prior permission.
+
+
+EN-ID ORIGINAL LICENSE
+Creative Commons Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+
+This dictionary is a compilation of the sources listed in ATTRIBUTION.
+Each source's own terms are reproduced there and continue to apply to the
+material it contributed.
+
+  * Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0) -- https://creativecommons.org/licenses/by-sa/4.0/
+  * MIT License (MIT) -- https://opensource.org/licenses/MIT
+  * WordNet 3.0 License (Princeton University) (WordNet-3.0) -- https://wordnet.princeton.edu/license-and-commercial-use
+
+
+
+====================================================================
+ID-EN ORIGINAL README
+====================================================================
+Indonesian to English
+=====================
+
+57339 entries, 65432 inflected forms.
+Built 2026-09-21 by koreader-dicts.
+Licence: CC-BY-SA-4.0. See LICENSE and ATTRIBUTION.
+
+Installation (KOReader)
+-----------------------
+
+Copy the folder containing the .ifo / .idx / .dict.dz / .syn files into
+
+    koreader/data/dict/
+
+on your device, so that you end up with
+
+    koreader/data/dict/id-en/id-en.ifo
+
+Restart KOReader. The dictionary appears in the dictionary list; if several are
+installed, long-press the dictionary name in a lookup popup to reorder them.
+
+Not affiliated with the KOReader project.
+
+
+ID-EN ORIGINAL ATTRIBUTION
+This dictionary is distributed under Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
+https://creativecommons.org/licenses/by-sa/4.0/
+
+It is built from the following sources:
+
+  * omw-id: Wordnet Bahasa (Indonesian), via Open Multilingual Wordnet 1.4
+  * pwn30: Princeton University WordNet 3.0
+  * wikt-id-def: Indonesian Wiktionary via kaikki.org (wiktextract)
+  * wikt-id-en: English Wiktionary (Indonesian entries) via kaikki.org (wiktextract)
+  * wikt-id-to-en: Indonesian Wiktionary via kaikki.org (wiktextract)
+
+-- WordNet 3.0 License (Princeton University) --
+WordNet Release 3.0 Copyright 2006 by Princeton University. All rights reserved. This copyright notice must be retained on all copies, including modified copies. The name of Princeton University or Princeton may not be used in advertising or publicity pertaining to distribution of the software and/or database without specific, written prior permission.
+
+
+ID-EN ORIGINAL LICENSE
+Creative Commons Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+
+This dictionary is a compilation of the sources listed in ATTRIBUTION.
+Each source's own terms are reproduced there and continue to apply to the
+material it contributed.
+
+  * Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0) -- https://creativecommons.org/licenses/by-sa/4.0/
+  * MIT License (MIT) -- https://opensource.org/licenses/MIT
+  * WordNet 3.0 License (Princeton University) (WordNet-3.0) -- https://wordnet.princeton.edu/license-and-commercial-use
